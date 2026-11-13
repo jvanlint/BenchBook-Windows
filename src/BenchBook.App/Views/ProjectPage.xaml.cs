@@ -27,11 +27,18 @@ public sealed partial class ProjectPage : Page
         _args = (ProjectPageArgs)e.Parameter;
         var project = _args.Project;
         NameText.Text = project.Name;
+        ToolTipService.SetToolTip(NameText, project.Name);
         var summary = Words.ProjectSummary(project);
         SummaryText.Text = summary.Length > 0 ? $"{summary} · {Words.StatusName(project.Status)}" : Words.StatusName(project.Status);
         StatusIcon.Glyph = Words.StatusGlyph(project.Status);
         await References.ShowAsync(_args.Services, project);
     }
+
+    /// <summary>The name always keeps this much width; the command bar gets what's left.</summary>
+    private const double NameMinimumWidth = 260;
+
+    private void Header_SizeChanged(object sender, SizeChangedEventArgs e) =>
+        Commands.MaxWidth = Math.Max(48, e.NewSize.Width - NameMinimumWidth - Header.ColumnSpacing);
 
     private void Tabs_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {

@@ -28,11 +28,10 @@ internal sealed partial class ImageViewerWindow : Window
     {
         if (Open.TryGetValue(entry.Reference.Id, out var existing))
         {
-            existing.Activate();
+            WindowFrames.Present(existing);
             return;
         }
-        var window = new ImageViewerWindow(services, entry);
-        window.Activate();
+        WindowFrames.Present(new ImageViewerWindow(services, entry));
     }
 
     private readonly AppServices _services;
@@ -42,12 +41,19 @@ internal sealed partial class ImageViewerWindow : Window
     // The image, laid out at one unit per image pixel; zoom scales it.
     private readonly ScrollViewer _scroller = new()
     {
-        ZoomMode = ZoomMode.Enabled, MinZoomFactor = 0.02f, MaxZoomFactor = 16f,
+        ZoomMode = ZoomMode.Enabled, MinZoomFactor = 0.1f, MaxZoomFactor = 16f,
         HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Enabled,
         IsTabStop = true,
     };
-    private readonly CursorGrid _surface = new() { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
+    private readonly CursorCanvas _surface = new() { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
+
+    /// <summary>
+    /// Layout units per image pixel. Very large images are laid out smaller, so
+    /// fitting them never needs a zoom below what WinUI allows (0.1). Notes still
+    /// work in the image's own pixels, on the overlay.
+    /// </summary>
+    private double _layout = 1;
     private readonly Image _image = new() { Stretch = Stretch.Fill };
     private readonly Canvas _overlay = new();
     private readonly Rectangle _drawing = new() { StrokeThickness = 2, Visibility = Visibility.Collapsed, StrokeDashArray = [4, 2] };
@@ -110,7 +116,15 @@ internal sealed partial class ImageViewerWindow : Window
         _surface.PointerPressed += Surface_PointerPressed;
         _surface.PointerMoved += Surface_PointerMoved;
         _surface.PointerReleased += Surface_PointerReleased;
-        _surface.PointerCaptureLost += (_, _) => EndDrag(commit: false);
+        _surface.PointerCaptureLost += (_, _) => { if (_drag != Drag.None) EndDrag(commit: false); };
+        // The scroll wheel zooms around the pointer (Ctrl+wheel also works anywhere in the view).
+        _surface.PointerWheelChanged += (_, e) =>
+        {
+            if (!_loaded) return;
+            var delta = e.GetCurrentPoint(_scroller).Properties.MouseWheelDelta;
+            ZoomAround(e.GetCurrentPoint(_scroller).Position, Math.Pow(1.15, delta / 120.0));
+            e.Handled = true;
+        };
 
         var commands = new CommandBar { DefaultLabelPosition = CommandBarDefaultLabelPosition.Collapsed, HorizontalAlignment = HorizontalAlignment.Left, Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
         Tip(_previous, "Previous Image (Ctrl+[)");
@@ -271,10 +285,12 @@ internal sealed partial class ImageViewerWindow : Window
                 if (width == 0 || height == 0) (width, height) = (bitmap.PixelWidth, bitmap.PixelHeight);
                 _imageWidth = width;
                 _imageHeight = height;
-                _surface.Width = width;
-                _surface.Height = height;
+                _layout = Math.Min(1, 4096.0 / Math.Max(width, height));
+                _surface.Width = _image.Width = width * _layout;
+                _surface.Height = _image.Height = height * _layout;
                 _overlay.Width = width;
                 _overlay.Height = height;
+                _overlay.RenderTransform = new ScaleTransform { ScaleX = _layout, ScaleY = _layout };
                 _image.Source = bitmap;
                 _loaded = true;
             }
@@ -344,12 +360,12 @@ internal sealed partial class ImageViewerWindow : Window
     private bool _fitOnResize;
 
     /// <summary>One image pixel per screen pixel.</summary>
-    private float ActualZoom => (float)(1 / (Content.XamlRoot?.RasterizationScale ?? 1));
+    private float ActualZoom => (float)(1 / ((Content.XamlRoot?.RasterizationScale ?? 1) * _layout));
 
     private void Fit()
     {
         if (!_loaded || _scroller.ViewportWidth <= 0) return;
-        var zoom = Math.Min(_scroller.ViewportWidth / _imageWidth, _scroller.ViewportHeight / _imageHeight);
+        var zoom = Math.Min(_scroller.ViewportWidth / (_imageWidth * _layout), _scroller.ViewportHeight / (_imageHeight * _layout));
         // Small images aren't enlarged past actual size.
         _scroller.ChangeView(0, 0, (float)Math.Clamp(Math.Min(zoom, ActualZoom), _scroller.MinZoomFactor, _scroller.MaxZoomFactor), disableAnimation: true);
         _fitOnResize = true;
@@ -371,6 +387,16 @@ internal sealed partial class ImageViewerWindow : Window
         _scroller.ChangeView(centreX * zoom - _scroller.ViewportWidth / 2, centreY * zoom - _scroller.ViewportHeight / 2, zoom, disableAnimation: true);
     }
 
+    /// <summary>Zooms by a factor, keeping the point under the pointer where it is.</summary>
+    private void ZoomAround(Windows.Foundation.Point pointer, double factor)
+    {
+        _fitOnResize = false;
+        var zoom = (float)Math.Clamp(_scroller.ZoomFactor * factor, _scroller.MinZoomFactor, _scroller.MaxZoomFactor);
+        var contentX = (_scroller.HorizontalOffset + pointer.X) / _scroller.ZoomFactor;
+        var contentY = (_scroller.VerticalOffset + pointer.Y) / _scroller.ZoomFactor;
+        _scroller.ChangeView(contentX * zoom - pointer.X, contentY * zoom - pointer.Y, zoom, disableAnimation: true);
+    }
+
     private void UpdateZoomText()
     {
         var percent = (int)Math.Round(_scroller.ZoomFactor / ActualZoom * 100);
@@ -387,7 +413,8 @@ internal sealed partial class ImageViewerWindow : Window
     {
         foreach (var element in _overlay.Children.Where(c => c != _drawing).ToList()) _overlay.Children.Remove(element);
         if (!_loaded || _showBoxes.IsChecked != true) return;
-        var scale = 1 / Math.Max(_scroller.ZoomFactor, 0.01);
+        // Screen-sized lines and badges, whatever the zoom: one image pixel is this many screen units.
+        var scale = 1 / Math.Max(_scroller.ZoomFactor * _layout, 0.0001);
         var number = 0;
         foreach (var note in _notes)
         {
@@ -456,8 +483,8 @@ internal sealed partial class ImageViewerWindow : Window
     {
         if (!_loaded || !e.GetCurrentPoint(_surface).Properties.IsLeftButtonPressed) return;
         _scroller.Focus(FocusState.Pointer);
-        var point = e.GetCurrentPoint(_surface).Position;
-        var tolerance = HandleSize / Math.Max(_scroller.ZoomFactor, 0.01);
+        var point = e.GetCurrentPoint(_overlay).Position;
+        var tolerance = HandleSize / Math.Max(_scroller.ZoomFactor * _layout, 0.0001);
         _dragStart = point;
 
         if (_drawBox.IsChecked == true)
@@ -493,12 +520,12 @@ internal sealed partial class ImageViewerWindow : Window
     private void Surface_PointerMoved(object sender, PointerRoutedEventArgs e)
     {
         if (_drag == Drag.None) return;
-        var point = e.GetCurrentPoint(_surface).Position;
+        var point = e.GetCurrentPoint(_overlay).Position;
         switch (_drag)
         {
             case Drag.Draw:
                 var drawn = NoteGeometry.FromDrag(_dragStart.X, _dragStart.Y, point.X, point.Y, _imageWidth, _imageHeight);
-                _drawing.StrokeThickness = 2 / Math.Max(_scroller.ZoomFactor, 0.01);
+                _drawing.StrokeThickness = 2 / Math.Max(_scroller.ZoomFactor * _layout, 0.0001);
                 _drawing.Width = drawn.Width;
                 _drawing.Height = drawn.Height;
                 Canvas.SetLeft(_drawing, drawn.X);
@@ -523,9 +550,10 @@ internal sealed partial class ImageViewerWindow : Window
     private void Surface_PointerReleased(object sender, PointerRoutedEventArgs e)
     {
         if (_drag == Drag.None) return;
-        var point = e.GetCurrentPoint(_surface).Position;
-        _surface.ReleasePointerCapture(e.Pointer);
+        var point = e.GetCurrentPoint(_overlay).Position;
+        // Save first: releasing the pointer raises PointerCaptureLost straight away, which cancels an open drag.
         EndDrag(commit: true, point);
+        _surface.ReleasePointerCapture(e.Pointer);
         e.Handled = true;
     }
 
@@ -589,6 +617,8 @@ internal sealed partial class ImageViewerWindow : Window
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(field, $"Note {number}");
             field.GotFocus += (_, _) => Select(note.Id, fromPanel: true);
             field.LostFocus += (_, _) => SaveText(note, field.Text);
+            WindowFrames.CommitOnEnter(field, () => { SaveText(note, field.Text); _scroller.Focus(FocusState.Keyboard); });
+            Tip(field, "Enter saves the note. Shift+Enter starts a new line.");
             _noteFields[note.Id] = field;
 
             var card = new StackPanel { Spacing = 4, Children = { header, field } };
@@ -727,8 +757,8 @@ internal sealed partial class ImageViewerWindow : Window
     }
 }
 
-/// <summary>A grid that can set its own pointer cursor, which WinUI only allows from inside an element.</summary>
-internal sealed partial class CursorGrid : Grid
+/// <summary>A canvas that can set its own pointer cursor, which WinUI only allows from inside an element.</summary>
+internal sealed partial class CursorCanvas : Canvas
 {
     public void SetCursor(InputCursor cursor) => ProtectedCursor = cursor;
 }

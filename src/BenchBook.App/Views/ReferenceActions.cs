@@ -23,8 +23,7 @@ internal static class ReferenceActions
                 Viewers.MarkdownWindow.Show(services, entry);
                 return false;
             case ReferenceKind.Pdf:
-                // The PDF viewer comes next; until then, the default app shows a copy.
-                await OpenFile(root, services, entry);
+                Viewers.PdfViewerWindow.Show(services, entry);
                 return false;
             case ReferenceKind.Webpage:
                 await Opener.OpenLink(reference.SourcePageUrl);

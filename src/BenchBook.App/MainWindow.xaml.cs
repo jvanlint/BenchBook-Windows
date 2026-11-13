@@ -21,6 +21,7 @@ public sealed partial class MainWindow : Window
     private List<Project> _projects = [];
     private bool _rebuilding;
     private bool _showAllTags;
+    private bool _sidebarStale;
     private string? _paintToShow;
     private LibrarySearch? _searchIndex;
     private SearchPage? _searchPage;
@@ -43,16 +44,31 @@ public sealed partial class MainWindow : Window
         _services = services;
         _outcome = outcome;
         InitializeComponent();
-        AppWindow.Resize(new Windows.Graphics.SizeInt32(1200, 800));
+        // Opens at the size and place it had when it was last closed.
+        Viewers.WindowFrames.Restore(this, services, "main", 1200, 800);
+        Closed += (_, _) => Viewers.WindowFrames.Save(this, services, "main");
         AppWindow.SetIcon("Assets/Square44x44Logo.png");
         BuildSidebar(select: null);
         // Tag counts change as references are tagged, so the Tags section follows the library.
         services.LibraryChanged += (_, _) => DispatcherQueue.TryEnqueue(() =>
         {
             _searchIndex = null;
+            // Rebuilding the sidebar moves the focus, which would bring this window in front of a viewer.
+            if (!_services.MainWindowActive) { _sidebarStale = true; return; }
             UpdateTags();
             UpdateShoppingCount();
         });
+        Activated += (_, e) =>
+        {
+            var active = e.WindowActivationState != WindowActivationState.Deactivated;
+            if (active && _sidebarStale)
+            {
+                _sidebarStale = false;
+                UpdateTags();
+                UpdateShoppingCount();
+            }
+            _services.SetMainWindowActive(active);
+        };
         services.ShowProject = ShowProject;
 
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_search, "Search everything");

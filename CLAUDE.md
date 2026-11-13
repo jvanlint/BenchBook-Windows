@@ -81,16 +81,21 @@ there is wrong or out of date, tell the user.
 ```text
 BenchBook.slnx
 src\BenchBook.Core\         no UI: records, store, backup and restore, clean-up, settings (net10.0)
+src\BenchBook.Pdf\          PDFium bindings, PDF opening, rendering, Find and marked-up export (net10.0)
 src\BenchBook.App\          the WinUI 3 app, packaged as MSIX (x64 and Arm64)
 tests\BenchBook.Core.Tests\ xUnit v3 tests, each with its own temporary library
+tests\BenchBook.Pdf.Tests\  PDF tests, on PDFs made with PDFium itself
 ```
 
 - .NET 10 (the LTS), C# 14, Windows App SDK 2.6.4 (self-contained in the
   package), Microsoft.Data.Sqlite 10.0.14, CommunityToolkit.Mvvm 8.4.2, xUnit
   v3 4.0.2. Pick package versions at least two weeks old.
 - Build: `dotnet build src\BenchBook.App -p:Platform=x64` (or `ARM64`).
-- Test: `dotnet test --project tests\BenchBook.Core.Tests` (Microsoft Testing
+- Test: `dotnet test --project tests\BenchBook.Core.Tests` and
+  `dotnet test --project tests\BenchBook.Pdf.Tests` (Microsoft Testing
   Platform, set in `global.json`).
+- PDF markups are stored in the page's own PDF coordinates (points, y up),
+  as PDFKit gives them on the Mac, with the crop box as the page's bounds.
 - Run: open `BenchBook.slnx` in Visual Studio and start `BenchBook.App` (x64).
   Deploying a development package needs Developer Mode.
 - The store's tables mirror `library.json`, with camelCase column names taken

@@ -9,8 +9,10 @@
       <Deploy />
     </Project>
     <Project Path="src/BenchBook.Core/BenchBook.Core.csproj" />
+    <Project Path="src/BenchBook.Pdf/BenchBook.Pdf.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/BenchBook.Core.Tests/BenchBook.Core.Tests.csproj" />
+    <Project Path="tests/BenchBook.Pdf.Tests/BenchBook.Pdf.Tests.csproj" />
   </Folder>
 </Solution>

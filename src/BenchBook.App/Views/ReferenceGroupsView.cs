@@ -90,6 +90,12 @@ internal sealed class ReferenceGroupsView : UserControl
             if (await ReferenceActions.EditDetails(XamlRoot, Services, entry) && Changed is not null) await Changed();
         };
         menu.Items.Add(edit);
+        if (entry.Reference.Kind == ReferenceKind.Pdf)
+        {
+            var export = new MenuFlyoutItem { Text = "Export Marked-Up Copy…" };
+            export.Click += async (_, _) => await Viewers.PdfViewerWindow.ExportMarkedUpCopy(Services, entry, XamlRoot, App.MainWindow!.AppWindow.Id);
+            menu.Items.Add(export);
+        }
 
         if (args.TryGetPosition(sender, out var point)) menu.ShowAt(sender, new FlyoutShowOptions { Position = point });
         else menu.ShowAt(target);

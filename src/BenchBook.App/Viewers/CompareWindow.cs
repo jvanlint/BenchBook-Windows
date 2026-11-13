@@ -22,7 +22,7 @@ internal sealed partial class CompareWindow : Window
     public const int MaxImages = 4;
 
     public static void Show(AppServices services, IReadOnlyList<ReferenceEntry> images) =>
-        new CompareWindow(services, images.Take(MaxImages).ToList()).Activate();
+        WindowFrames.Present(new CompareWindow(services, images.Take(MaxImages).ToList()));
 
     private readonly AppServices _services;
     private readonly List<ImagePane> _panes = [];
@@ -149,13 +149,15 @@ internal sealed partial class ImagePane : UserControl
     private readonly AppServices _services;
     private readonly ScrollViewer _scroller = new()
     {
-        ZoomMode = ZoomMode.Enabled, MinZoomFactor = 0.02f, MaxZoomFactor = 16f,
+        ZoomMode = ZoomMode.Enabled, MinZoomFactor = 0.1f, MaxZoomFactor = 16f,
         HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         HorizontalScrollMode = ScrollMode.Enabled, VerticalScrollMode = ScrollMode.Enabled,
     };
-    private readonly Grid _surface = new() { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
+    private readonly Canvas _surface = new() { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
     private readonly Image _image = new() { Stretch = Stretch.Fill };
     private readonly Canvas _overlay = new();
+    /// <summary>Layout units per image pixel; large images are laid out smaller, so fitting stays within WinUI's zoom range.</summary>
+    private double _layout = 1;
     private readonly TextBlock _title = new() { TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
     private readonly Border _frame = new() { BorderThickness = new Thickness(2), CornerRadius = new CornerRadius(6) };
     private List<Markup> _notes = [];
@@ -194,6 +196,18 @@ internal sealed partial class ImagePane : UserControl
         };
         _surface.PointerReleased += (_, e) => { _panning = false; _surface.ReleasePointerCapture(e.Pointer); };
         _surface.DoubleTapped += (_, _) => ShowOnly?.Invoke(this, EventArgs.Empty);
+        _surface.PointerWheelChanged += (_, e) =>
+        {
+            if (!_loaded) return;
+            Selected?.Invoke(this, EventArgs.Empty);
+            var point = e.GetCurrentPoint(_scroller);
+            _fitted = false;
+            var zoom = (float)Math.Clamp(_scroller.ZoomFactor * Math.Pow(1.15, point.Properties.MouseWheelDelta / 120.0), _scroller.MinZoomFactor, _scroller.MaxZoomFactor);
+            var contentX = (_scroller.HorizontalOffset + point.Position.X) / _scroller.ZoomFactor;
+            var contentY = (_scroller.VerticalOffset + point.Position.Y) / _scroller.ZoomFactor;
+            _scroller.ChangeView(contentX * zoom - point.Position.X, contentY * zoom - point.Position.Y, zoom, disableAnimation: true);
+            e.Handled = true;
+        };
 
         var previous = Small("\uE76B", "Previous image in the project");
         previous.Click += (_, _) => Step(-1);
@@ -276,8 +290,12 @@ internal sealed partial class ImagePane : UserControl
             var bitmap = new BitmapImage();
             if (Math.Max(_width, _height) > 16384) { if (_width >= _height) bitmap.DecodePixelWidth = 16384; else bitmap.DecodePixelHeight = 16384; }
             await bitmap.SetSourceAsync(stream.AsRandomAccessStream());
-            _surface.Width = _overlay.Width = _width;
-            _surface.Height = _overlay.Height = _height;
+            _layout = Math.Min(1, 2048.0 / Math.Max(_width, _height));
+            _surface.Width = _image.Width = _width * _layout;
+            _surface.Height = _image.Height = _height * _layout;
+            _overlay.Width = _width;
+            _overlay.Height = _height;
+            _overlay.RenderTransform = new ScaleTransform { ScaleX = _layout, ScaleY = _layout };
             _image.Source = bitmap;
             _loaded = true;
             await Task.Yield();
@@ -302,7 +320,7 @@ internal sealed partial class ImagePane : UserControl
     public void Fit()
     {
         if (!_loaded || _scroller.ViewportWidth <= 0) return;
-        var zoom = Math.Min(_scroller.ViewportWidth / _width, _scroller.ViewportHeight / _height);
+        var zoom = Math.Min(_scroller.ViewportWidth / (_width * _layout), _scroller.ViewportHeight / (_height * _layout));
         _scroller.ChangeView(0, 0, (float)Math.Clamp(zoom, _scroller.MinZoomFactor, _scroller.MaxZoomFactor), disableAnimation: true);
         _fitted = true;
     }
@@ -320,7 +338,7 @@ internal sealed partial class ImagePane : UserControl
     {
         _overlay.Children.Clear();
         if (!_loaded || !_showBoxes) return;
-        var scale = 1 / Math.Max(_scroller.ZoomFactor, 0.01);
+        var scale = 1 / Math.Max(_scroller.ZoomFactor * _layout, 0.0001);
         var number = 0;
         foreach (var note in _notes)
         {

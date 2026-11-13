@@ -58,12 +58,14 @@ public sealed partial class ReferencesView : UserControl
             _services.LinkDetailsSaved -= LinkDetailsSaved;
             _services.LibraryChanged -= LibraryChanged;
             _services.TransferNoticed -= TransferNoticed;
+            _services.MainWindowActivated -= MainWindowActivated;
         }
         _services = services;
         _project = project;
         services.LinkDetailsSaved += LinkDetailsSaved;
         services.LibraryChanged += LibraryChanged;
         services.TransferNoticed += TransferNoticed;
+        services.MainWindowActivated += MainWindowActivated;
         Unloaded -= View_Unloaded;
         Unloaded += View_Unloaded;
         await ReloadAsync();
@@ -74,6 +76,17 @@ public sealed partial class ReferencesView : UserControl
         _services.LinkDetailsSaved -= LinkDetailsSaved;
         _services.LibraryChanged -= LibraryChanged;
         _services.TransferNoticed -= TransferNoticed;
+        _services.MainWindowActivated -= MainWindowActivated;
+    }
+
+    /// <summary>Set when the library changed while another window was in front; the gallery reloads when this window is active again.</summary>
+    private bool _stale;
+
+    private async void MainWindowActivated(object? sender, EventArgs e)
+    {
+        if (!_stale) return;
+        _stale = false;
+        await ReloadAsync();
     }
 
     private bool _notifying;
@@ -81,7 +94,10 @@ public sealed partial class ReferencesView : UserControl
     /// <summary>The library changed somewhere else, e.g. references dropped on a tag: show it.</summary>
     private async void LibraryChanged(object? sender, EventArgs e)
     {
-        if (!_notifying) await ReloadAsync();
+        if (_notifying) return;
+        // Reloading moves the focus, which would bring the main window in front of a viewer.
+        if (!_services.MainWindowActive) { _stale = true; return; }
+        await ReloadAsync();
     }
 
     private void TransferNoticed(object? sender, (string Message, string ProjectId, bool CanShow) notice) =>
@@ -90,7 +106,9 @@ public sealed partial class ReferencesView : UserControl
     /// <summary>A link in this project got its details or poster: show them.</summary>
     private async void LinkDetailsSaved(object? sender, string referenceId)
     {
-        if (_tiles.Any(t => Ids.Comparer.Equals(t.Reference.Id, referenceId))) await ReloadAsync();
+        if (!_tiles.Any(t => Ids.Comparer.Equals(t.Reference.Id, referenceId))) return;
+        if (!_services.MainWindowActive) { _stale = true; return; }
+        await ReloadAsync();
     }
 
     // MARK: Loading and filtering
@@ -467,6 +485,7 @@ public sealed partial class ReferencesView : UserControl
 
     private void Gallery_PointerReleased(object sender, PointerRoutedEventArgs e)
     {
+        if (_openOnRelease is not null) OpenPending();
         if (_marquee is null) return;
         EndMarquee();
         Gallery.ReleasePointerCapture(e.Pointer);
@@ -501,9 +520,34 @@ public sealed partial class ReferencesView : UserControl
 
     // MARK: Opening
 
-    private async void Gallery_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    private ReferenceTile? _openOnRelease;
+    private DispatcherTimer? _openFallback;
+
+    /// <summary>
+    /// A double-click arrives while the button is still down. Opening a viewer then
+    /// loses it behind this window, which takes the focus back when the button is
+    /// released, so the viewer opens once the click has finished.
+    /// </summary>
+    private void Gallery_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
-        if ((e.OriginalSource as FrameworkElement)?.DataContext is ReferenceTile tile) await OpenAsync(tile);
+        if ((e.OriginalSource as FrameworkElement)?.DataContext is not ReferenceTile tile) return;
+        e.Handled = true;
+        _openOnRelease = tile;
+        // In case no release follows, e.g. some pens.
+        _openFallback?.Stop();
+        _openFallback = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+        _openFallback.Tick += (_, _) => OpenPending();
+        _openFallback.Start();
+    }
+
+    private void OpenPending()
+    {
+        _openFallback?.Stop();
+        _openFallback = null;
+        if (_openOnRelease is not { } tile) return;
+        _openOnRelease = null;
+        // After the gallery has finished handling the release, including focusing the tile.
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, async () => await OpenAsync(tile));
     }
 
     private async void Gallery_KeyDown(object sender, KeyRoutedEventArgs e)
@@ -584,6 +628,8 @@ public sealed partial class ReferencesView : UserControl
 
         Add("Open", () => OpenAsync(tile), Symbol.OpenFile);
         if (tile.Entry.Asset is not null) Add("Open in Default App", () => OpenFileAsync(tile));
+        if (reference.Kind == ReferenceKind.Pdf)
+            Add("Export Marked-Up Copy…", () => Viewers.PdfViewerWindow.ExportMarkedUpCopy(_services, tile.Entry, XamlRoot, App.MainWindow!.AppWindow.Id));
         foreach (var moment in tile.Entry.Moments)
             Add($"Open at {VideoLink.Format(moment.OffsetSeconds)}",
                 () => Opener.OpenLink(VideoLink.PlaybackUrl(reference.SourcePageUrl ?? "", moment.OffsetSeconds)));

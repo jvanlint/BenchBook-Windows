@@ -70,6 +70,23 @@ public sealed class AppServices : IDisposable, IStoreAccess
     public void NotifyLibraryChanged() => LibraryChanged?.Invoke(this, EventArgs.Empty);
 
     /// <summary>
+    /// Whether the main window is the active window. All BenchBook's windows share
+    /// one UI thread, and moving the focus inside a window activates it, so the main
+    /// window doesn't rebuild itself while a viewer is in front: it catches up when
+    /// it's activated again.
+    /// </summary>
+    public bool MainWindowActive { get; private set; } = true;
+
+    /// <summary>Raised when the main window becomes the active window again.</summary>
+    public event EventHandler? MainWindowActivated;
+
+    public void SetMainWindowActive(bool active)
+    {
+        MainWindowActive = active;
+        if (active) MainWindowActivated?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
     /// The drag format for references dragged from the gallery. Private to
     /// BenchBook, so other apps never mistake it for something to open.
     /// </summary>

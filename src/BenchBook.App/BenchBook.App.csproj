@@ -35,6 +35,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\BenchBook.Core\BenchBook.Core.csproj" />
+    <ProjectReference Include="..\BenchBook.Pdf\BenchBook.Pdf.csproj" />
   </ItemGroup>
 
 </Project>

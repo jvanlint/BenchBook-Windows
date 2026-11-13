@@ -19,6 +19,8 @@ public sealed class AppSettings
     public DateTimeOffset? LastBackup { get; set; }
     /// <summary>Each viewer's last size and position: x, y, width, height.</summary>
     public Dictionary<string, int[]> WindowFrames { get; set; } = [];
+    /// <summary>The last colour chosen for each kind of PDF markup.</summary>
+    public Dictionary<string, string> MarkupColors { get; set; } = [];
 
     private static readonly JsonSerializerOptions Options = new()
     {

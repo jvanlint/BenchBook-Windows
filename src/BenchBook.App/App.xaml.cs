@@ -14,6 +14,34 @@ public partial class App : Application
     public App()
     {
         InitializeComponent();
+        // An error nothing caught is written to a log and the app carries on,
+        // so a problem doesn't lose the user's work and can be traced afterwards.
+        UnhandledException += (_, e) =>
+        {
+            LogError(e.Exception);
+            e.Handled = true;
+        };
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            LogError(e.Exception);
+            e.SetObserved();
+        };
+    }
+
+    /// <summary>%LOCALAPPDATA%\BenchBook\Logs\Errors.log. It stays on this PC and is never sent anywhere.</summary>
+    public static string ErrorLogPath => Path.Combine(LibraryLocation.Default().AppFolder, "Logs", "Errors.log");
+
+    public static void LogError(Exception error)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(ErrorLogPath)!);
+            File.AppendAllText(ErrorLogPath, $"{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz} BenchBook {Environment.Version}{Environment.NewLine}{error}{Environment.NewLine}{Environment.NewLine}");
+        }
+        catch (Exception)
+        {
+            // Nowhere to write: nothing more can be done.
+        }
     }
 
     /// <summary>The running app's library, or null when it couldn't be opened.</summary>

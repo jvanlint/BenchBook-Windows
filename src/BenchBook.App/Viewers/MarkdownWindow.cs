@@ -17,7 +17,7 @@ namespace BenchBook.App.Viewers;
 /// <summary>A Markdown file, read-only, in its own window. Links open in the browser.</summary>
 internal sealed partial class MarkdownWindow : Window
 {
-    public static void Show(AppServices services, ReferenceEntry entry) => new MarkdownWindow(services, entry).Activate();
+    public static void Show(AppServices services, ReferenceEntry entry) => WindowFrames.Present(new MarkdownWindow(services, entry));
 
     private MarkdownWindow(AppServices services, ReferenceEntry entry)
     {

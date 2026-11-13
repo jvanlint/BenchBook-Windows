@@ -19,20 +19,21 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Name and summary, then the commands. -->
-        <Grid ColumnSpacing="16">
+        <!-- Name and summary, then the commands. The name keeps its width; the commands
+             fold into their "…" menu when there isn't room for them all. -->
+        <Grid x:Name="Header" ColumnSpacing="16" SizeChanged="Header_SizeChanged">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <StackPanel Spacing="2">
-                <TextBlock x:Name="NameText" Style="{StaticResource TitleTextBlockStyle}" TextWrapping="Wrap" />
+                <TextBlock x:Name="NameText" Style="{StaticResource TitleTextBlockStyle}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <FontIcon x:Name="StatusIcon" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                    <TextBlock x:Name="SummaryText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                    <TextBlock x:Name="SummaryText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
             </StackPanel>
-            <CommandBar Grid.Column="1" DefaultLabelPosition="Right" IsDynamicOverflowEnabled="True" Background="Transparent" VerticalAlignment="Top">
+            <CommandBar x:Name="Commands" Grid.Column="1" DefaultLabelPosition="Right" IsDynamicOverflowEnabled="True" Background="Transparent" VerticalAlignment="Top">
                 <AppBarButton x:Name="AddFilesButton" Label="Add Files…" Icon="Add" Click="AddFiles_Click" ToolTipService.ToolTip="Add Files (Ctrl+O)">
                     <AppBarButton.KeyboardAccelerators>
                         <KeyboardAccelerator Modifiers="Control" Key="O" />
