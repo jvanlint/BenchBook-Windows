@@ -65,10 +65,7 @@
 
         <local:ReferencesView x:Name="References" Grid.Row="2" />
 
-        <StackPanel x:Name="LaterTab" Grid.Row="2" MaxWidth="480" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8" Visibility="Collapsed">
-            <TextBlock x:Name="LaterTitle" Style="{StaticResource SubtitleTextBlockStyle}" HorizontalAlignment="Center" />
-            <TextBlock Text="This tab arrives in the next phase of BenchBook for Windows."
-                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
-        </StackPanel>
+        <ContentControl x:Name="OtherTab" Grid.Row="2" Visibility="Collapsed"
+                        HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" IsTabStop="False" />
     </Grid>
 </Page>

@@ -21,6 +21,7 @@ public sealed partial class MainWindow : Window
     private List<Project> _projects = [];
     private bool _rebuilding;
     private bool _showAllTags;
+    private string? _paintToShow;
     private LibrarySearch? _searchIndex;
     private SearchPage? _searchPage;
     private readonly List<Tag> _searchTags = [];
@@ -50,6 +51,7 @@ public sealed partial class MainWindow : Window
         {
             _searchIndex = null;
             UpdateTags();
+            UpdateShoppingCount();
         });
         services.ShowProject = ShowProject;
 
@@ -103,6 +105,7 @@ public sealed partial class MainWindow : Window
         Navigation.MenuItems.Add(Item("Tags", "\uE8EC", "tags"));
         _tagItems.Clear();
         AddTagItems();
+        UpdateShoppingCount();
         _rebuilding = false;
 
         if (selected is not null) Navigation.SelectedItem = selected;
@@ -411,6 +414,33 @@ public sealed partial class MainWindow : Window
         _services.NoticeTransfer(result.Notice(mode, project.Name), project.Id, result.Transferred.Count > 0);
     }
 
+    // MARK: Paints
+
+    /// <summary>The number of paints to buy, beside Shopping List.</summary>
+    private void UpdateShoppingCount()
+    {
+        if (Navigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => i.Tag as string == "shopping") is not { } item) return;
+        var count = _services.WithStore(s => new BenchBook.Core.Paints.ShoppingList(s).PaintCount);
+        item.InfoBadge = count > 0 ? new InfoBadge { Value = count } : null;
+        AutomationName(item, count > 0 ? $"Shopping List, {count:N0} {(count == 1 ? "paint" : "paints")} to buy" : "Shopping List");
+    }
+
+    /// <summary>Shows a paint in the catalogue, e.g. from the shopping list.</summary>
+    private void ShowPaint(string paintId)
+    {
+        _paintToShow = paintId;
+        if (Navigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => i.Tag as string == "paints") is not { } item) return;
+        if (ReferenceEquals(Navigation.SelectedItem, item))
+        {
+            ContentFrame.Content = new PaintsPage(_services, paintId);
+            _paintToShow = null;
+        }
+        else
+        {
+            Navigation.SelectedItem = item;
+        }
+    }
+
     // MARK: Tags in the sidebar
 
     /// <summary>The ten most used tags with their colour and count, then Show More or Show Less.</summary>
@@ -588,10 +618,11 @@ public sealed partial class MainWindow : Window
                 ContentFrame.Navigate(typeof(ProjectPage), new ProjectPageArgs(_services, project, EditProject, DeleteProject), new SuppressNavigationTransitionInfo());
                 break;
             case "paints":
-                ShowPlaceholder(new Placeholder("Paints", "The paint catalogue arrives in a later step."));
+                ContentFrame.Content = new PaintsPage(_services, _paintToShow);
+                _paintToShow = null;
                 break;
             case "shopping":
-                ShowPlaceholder(new Placeholder("Shopping List", "The shopping list arrives in a later step."));
+                ContentFrame.Content = new ShoppingListPage(_services, ShowPaint);
                 break;
             case "tags":
                 ContentFrame.Content = new TagsPage(_services, ShowTag);

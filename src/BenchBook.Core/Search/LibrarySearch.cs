@@ -177,19 +177,7 @@ public sealed class LibrarySearch
         _ => kind,
     };
 
-    public static string AftermarketTypeName(string type) => type switch
-    {
-        "decals" => "Decals",
-        "resin" => "Resin",
-        "photoEtch" => "Photo-Etch",
-        "printed3D" => "3D Printed",
-        "masks" => "Masks",
-        "metal" => "Metal",
-        "wheels" => "Wheels",
-        "figures" => "Figures",
-        "other" => "Other",
-        _ => type,
-    };
+    public static string AftermarketTypeName(string type) => Paints.AftermarketKinds.TypeName(type);
 }
 
 /// <summary>A short excerpt around the first match, with every match marked for bold.</summary>

@@ -14,6 +14,8 @@ internal sealed record ProjectPageArgs(AppServices Services, Project Project, Fu
 public sealed partial class ProjectPage : Page
 {
     private ProjectPageArgs? _args;
+    private ProjectPaintView? _paint;
+    private ProjectAftermarketView? _aftermarket;
 
     public ProjectPage()
     {
@@ -37,8 +39,12 @@ public sealed partial class ProjectPage : Page
         References.Visibility = references ? Visibility.Visible : Visibility.Collapsed;
         AddFilesButton.Visibility = references ? Visibility.Visible : Visibility.Collapsed;
         NewNoteButton.Visibility = references ? Visibility.Visible : Visibility.Collapsed;
-        LaterTab.Visibility = references ? Visibility.Collapsed : Visibility.Visible;
-        LaterTitle.Text = sender.SelectedItem == PaintTab ? "Paint" : "Aftermarket";
+        OtherTab.Visibility = references ? Visibility.Collapsed : Visibility.Visible;
+        if (_args is null || references) return;
+        // Each tab is made the first time it's shown.
+        OtherTab.Content = sender.SelectedItem == PaintTab
+            ? _paint ??= new ProjectPaintView(_args.Services, _args.Project)
+            : _aftermarket ??= new ProjectAftermarketView(_args.Services, _args.Project);
     }
 
     private void Tab1_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args) => Select(ReferencesTab, args);
