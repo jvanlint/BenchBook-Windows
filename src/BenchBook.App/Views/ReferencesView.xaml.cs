@@ -528,6 +528,13 @@ public sealed partial class ReferencesView : UserControl
 
     private async Task OpenAsync(ReferenceTile tile)
     {
+        // With two to four images selected, opening one compares them.
+        var images = Selection.Where(t => t.Reference.Kind == ReferenceKind.Image).ToList();
+        if (tile.Reference.Kind == ReferenceKind.Image && images.Contains(tile) && images.Count is >= 2 and <= Viewers.CompareWindow.MaxImages && images.Count == Selection.Count)
+        {
+            Viewers.CompareWindow.Show(_services, images.Select(t => t.Entry).ToList());
+            return;
+        }
         if (await ReferenceActions.Open(XamlRoot, _services, tile.Entry)) await ChangedAsync();
     }
 
@@ -615,6 +622,8 @@ public sealed partial class ReferencesView : UserControl
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(TransferMenu([tile], TransferMode.Move));
         menu.Items.Add(TransferMenu([tile], TransferMode.Copy));
+        if (reference.Kind == ReferenceKind.Image)
+            Add("Open Side by Side", () => { Viewers.CompareWindow.Show(_services, new[] { tile.Entry }); return Task.CompletedTask; });
 
         menu.Items.Add(new MenuFlyoutSeparator());
         Add("Delete…", () => DeleteAsync([tile]), Symbol.Delete);
@@ -630,6 +639,12 @@ public sealed partial class ReferencesView : UserControl
         menu.Items.Add(TagsMenu(tiles));
         menu.Items.Add(TransferMenu(tiles, TransferMode.Move));
         menu.Items.Add(TransferMenu(tiles, TransferMode.Copy));
+        if (tiles.All(t => t.Reference.Kind == ReferenceKind.Image) && tiles.Count <= Viewers.CompareWindow.MaxImages)
+        {
+            var compare = new MenuFlyoutItem { Text = "Open Side by Side" };
+            compare.Click += (_, _) => Viewers.CompareWindow.Show(_services, tiles.Select(t => t.Entry).ToList());
+            menu.Items.Add(compare);
+        }
         menu.Items.Add(new MenuFlyoutSeparator());
         var delete = new MenuFlyoutItem { Text = $"Delete {tiles.Count:N0} References…", Icon = new SymbolIcon(Symbol.Delete) };
         delete.Click += async (_, _) => await DeleteAsync(tiles);

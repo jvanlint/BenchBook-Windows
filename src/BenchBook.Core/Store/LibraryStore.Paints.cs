@@ -128,4 +128,18 @@ public sealed partial class LibraryStore
         });
         return assets.Distinct(Ids.Comparer).ToList();
     }
+
+    // MARK: Markups
+
+    public List<Markup> Markups(string referenceId) =>
+        MarkupsTable.ReadWhere(_connection, "referenceId = $id", ("$id", referenceId));
+
+    public void InsertMarkup(Markup markup) => RunInTransaction(t => MarkupsTable.InsertAll(_connection, t, [markup]));
+
+    public bool UpdateMarkup(Markup markup) => MarkupsTable.Update(_connection, markup);
+
+    public void DeleteMarkups(IEnumerable<string> ids) => RunInTransaction(t =>
+    {
+        foreach (var id in ids) Run("DELETE FROM markups WHERE id = $id", t, ("$id", id));
+    });
 }

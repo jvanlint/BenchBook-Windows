@@ -16,8 +16,14 @@ internal static class ReferenceActions
         var reference = entry.Reference;
         switch (reference.Kind)
         {
-            case ReferenceKind.Image or ReferenceKind.Pdf or ReferenceKind.Markdown:
-                // The built-in viewers come in a later phase; until then, the default app shows a copy.
+            case ReferenceKind.Image:
+                Viewers.ImageViewerWindow.Show(services, entry);
+                return false;
+            case ReferenceKind.Markdown:
+                Viewers.MarkdownWindow.Show(services, entry);
+                return false;
+            case ReferenceKind.Pdf:
+                // The PDF viewer comes next; until then, the default app shows a copy.
                 await OpenFile(root, services, entry);
                 return false;
             case ReferenceKind.Webpage:

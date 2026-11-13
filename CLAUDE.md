@@ -44,10 +44,13 @@ the PDF library and the repository.
 Decided with the user on 2026-11-13, for the open questions in
 `..\BenchBook\spec\windows-app.md`:
 
-1. **PDF library**: PDFium, through a .NET wrapper. Before adding it, find a
-   maintained wrapper with x64 and Arm64 builds and agree it with the user.
-2. **Markdown**: the Windows Community Toolkit Markdown control. Check whether
-   it's still experimental (Toolkit Labs) before relying on it.
+1. **PDF library**: PDFium's native builds from `bblanchon.PDFium.Win32`
+   (x64, Arm64 and x86 DLLs; Apache-2.0 packaging, BSD PDFium), with
+   BenchBook's own small P/Invoke layer for the functions it needs. No other
+   wrapper. Agreed with the user on 2026-11-13.
+2. **Markdown**: Markdig (BSD-2) parses it, and BenchBook draws it with
+   WinUI's own RichTextBlock. The Toolkit Markdown control isn't on nuget.org
+   for Windows App SDK 2.x, only Labs. Agreed with the user on 2026-11-13.
 3. **Mac ZIP writing**: the Mac app gets its own small ZIP reader and writer
    on the Compression framework (option B), not `ditto`. That's Mac work in
    phase 1, and the Mac code is read-only from here. The Windows app uses
@@ -59,8 +62,8 @@ Decided with the user on 2026-11-13, for the open questions in
 4. **Distribution**: direct download only, from GitHub Releases with an
    `.appinstaller` file. No Store listing. Signing (such as Azure Trusted
    Signing) is set up by the user.
-5. **Repository**: this separate `BenchBook-Windows` repo. Don't create the
-   GitHub repo without asking the user first.
+5. **Repository**: this separate repo, public at
+   https://github.com/jvanlint/BenchBook-Windows. `gh` is the GitHub CLI.
 6. **Demand**: not being gauged.
 7. **Library location**: the real `%LOCALAPPDATA%\BenchBook`, as the spec
    proposes. MSIX would otherwise redirect AppData writes into a private

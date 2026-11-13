@@ -29,6 +29,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.4" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- Markdown parsing for the Markdown viewer (BSD-2). Drawn with WinUI's own text elements. -->
+    <PackageReference Include="Markdig" Version="1.5.1" />
   </ItemGroup>
 
   <ItemGroup>

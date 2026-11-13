@@ -17,6 +17,8 @@ public sealed class AppSettings
     /// <summary>The sidebar's status filter; null shows every project.</summary>
     public string? ProjectStatusFilter { get; set; }
     public DateTimeOffset? LastBackup { get; set; }
+    /// <summary>Each viewer's last size and position: x, y, width, height.</summary>
+    public Dictionary<string, int[]> WindowFrames { get; set; } = [];
 
     private static readonly JsonSerializerOptions Options = new()
     {
