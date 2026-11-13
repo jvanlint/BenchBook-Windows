@@ -12,35 +12,66 @@ internal sealed partial class SearchPage : Page
 {
     private readonly AppServices _services;
     private readonly Func<LibrarySearch> _index;
+    private readonly Action<string> _removeTag;
     private readonly TextBlock _title = new() { Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] };
+    private readonly StackPanel _tokens = new() { Orientation = Orientation.Horizontal, Spacing = 6 };
     private readonly StackPanel _sections = new() { Spacing = 24 };
     private readonly ReferenceGroupsView _groups = new();
     private string _query = "";
+    private IReadOnlyList<Tag> _tags = [];
 
-    public SearchPage(AppServices services, Func<LibrarySearch> index)
+    /// <param name="removeTag">Takes a tag token out of the search, by tag id.</param>
+    public SearchPage(AppServices services, Func<LibrarySearch> index, Action<string> removeTag)
     {
         _services = services;
         _index = index;
+        _removeTag = removeTag;
         _groups.Services = services;
-        _groups.Changed = () => { services.NotifyLibraryChanged(); Show(_query); return Task.CompletedTask; };
-        var panel = new StackPanel { Spacing = 20, Padding = new Thickness(32, 20, 32, 24) };
+        _groups.Changed = () => { services.NotifyLibraryChanged(); Show(_query, _tags); return Task.CompletedTask; };
+        var panel = new StackPanel { Spacing = 16, Padding = new Thickness(32, 20, 32, 24) };
         panel.Children.Add(_title);
+        panel.Children.Add(_tokens);
         panel.Children.Add(_sections);
         panel.Children.Add(_groups);
         Content = new ScrollViewer { Content = panel };
     }
 
-    public void Show(string text)
+    /// <summary>Shows what matches the words and every chosen tag.</summary>
+    public void Show(string text, IReadOnlyList<Tag> tags)
     {
         _query = text;
-        var query = new SearchQuery(text);
+        _tags = tags;
+        var query = new SearchQuery(text, tags.Select(t => t.NormalizedName));
         var results = _index().Search(query);
         var count = results.ReferenceCount;
         _title.Text = $"Search · {count:N0} {(count == 1 ? "reference" : "references")}";
-        _sections.Children.Clear();
 
+        // Tag tokens: each narrows the results to references with every chosen tag.
+        _tokens.Children.Clear();
+        _tokens.Visibility = tags.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var tag in tags)
+        {
+            var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            content.Children.Add(TagCommands.Dot(tag.Color));
+            content.Children.Add(new TextBlock { Text = tag.Name });
+            content.Children.Add(new FontIcon { Glyph = "\uE711", FontSize = 10 });
+            var chip = new Button { Content = content, CornerRadius = new CornerRadius(12), Padding = new Thickness(10, 3, 10, 3) };
+            ToolTipService.SetToolTip(chip, $"Stop searching for “{tag.Name}”");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(chip, $"Remove {tag.Name} from the search");
+            var id = tag.Id;
+            chip.Click += (_, _) => _removeTag(id);
+            _tokens.Children.Add(chip);
+        }
+
+        _sections.Children.Clear();
         if (results.IsEmpty)
-            _sections.Children.Add(Secondary($"Nothing in your library matches “{text.Trim()}”."));
+        {
+            var words = text.Trim();
+            var what = words.Length > 0 && tags.Count > 0 ? $"“{words}” with these tags"
+                : words.Length > 0 ? $"“{words}”"
+                : tags.Count == 1 ? "this tag" : "all these tags";
+            _sections.Children.Add(Secondary($"Nothing in your library matches {what}."));
+        }
 
         if (results.Projects.Count > 0)
         {
@@ -73,7 +104,7 @@ internal sealed partial class SearchPage : Page
             hit.Matches.Where(m => m.ShownAsLine).Select(m =>
             {
                 var (excerpt, bold) = SearchSnippet.Excerpt(m.Text, query);
-                return new MatchLine(m.Label, excerpt, bold);
+                return new MatchLine(m.Label, excerpt, bold, m.MomentSeconds);
             }).ToList())).ToList());
     }
 

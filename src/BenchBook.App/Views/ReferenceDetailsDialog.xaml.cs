@@ -13,7 +13,7 @@ namespace BenchBook.App.Views;
 public sealed partial class ReferenceDetailsDialog : ContentDialog
 {
     private readonly AppServices _services;
-    private readonly ReferenceEntry _entry;
+    private ReferenceEntry _entry;
 
     public ReferenceDetailsDialog(AppServices services, ReferenceEntry entry)
     {
@@ -48,6 +48,10 @@ public sealed partial class ReferenceDetailsDialog : ContentDialog
         LinkSection.Visibility = Visibility.Visible;
         var isVideo = reference.Kind == ReferenceKind.VideoLink;
         LinkHeader.Text = isVideo ? "Video" : "Webpage";
+        ToolTipService.SetToolTip(RefreshButton, isVideo ? "Fetch the video's details and poster again" : "Fetch the page's preview image and details again");
+        LinkStatus.Visibility = Visibility.Collapsed;
+        Poster.Visibility = Visibility.Collapsed;
+        DescriptionExpander.Visibility = Visibility.Collapsed;
         var fetched = isVideo ? reference.VideoInfoFetchedAt : reference.LinkPreviewFetchedAt;
         if (fetched is null)
         {
@@ -136,6 +140,9 @@ public sealed partial class ReferenceDetailsDialog : ContentDialog
 
     private static void Fill(Grid grid, List<(string Label, UIElement Value)> rows)
     {
+        grid.Children.Clear();
+        grid.RowDefinitions.Clear();
+        grid.ColumnDefinitions.Clear();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         for (var i = 0; i < rows.Count; i++)
@@ -158,6 +165,42 @@ public sealed partial class ReferenceDetailsDialog : ContentDialog
         NavigateUri = Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri : null,
         Padding = new Thickness(0),
     };
+
+    /// <summary>Fetches the details again, even when automatic fetching is off, then shows them.</summary>
+    private async void Refresh_Click(object sender, RoutedEventArgs e)
+    {
+        RefreshButton.IsEnabled = false;
+        Fetching.Visibility = Visibility.Visible;
+        Fetching.IsActive = true;
+        var id = _entry.Reference.Id;
+        var titleBefore = _entry.Reference.Title ?? "";
+        try
+        {
+            if (await Task.Run(() => _services.Links.Refresh(id)))
+            {
+                _services.NotifyLibraryChanged();
+                if (_services.WithStore(s => s.ReferenceEntries(new[] { id })).FirstOrDefault() is { } fresh)
+                {
+                    // Keep anything already typed, but show a fetched title if the field wasn't changed.
+                    if (TitleBox.Text == titleBefore) TitleBox.Text = fresh.Reference.Title ?? "";
+                    // Saving the dialog then writes onto the fresh record, not the old details.
+                    _entry = fresh;
+                    ShowLink(fresh.Reference);
+                }
+            }
+            else if (_entry.Reference.Kind == ReferenceKind.VideoLink ? _entry.Reference.VideoInfoFetchedAt is null : _entry.Reference.LinkPreviewFetchedAt is null)
+            {
+                LinkStatus.Text = "BenchBook couldn't reach the site. It tries again when it's online.";
+                LinkStatus.Visibility = Visibility.Visible;
+            }
+        }
+        finally
+        {
+            Fetching.IsActive = false;
+            Fetching.Visibility = Visibility.Collapsed;
+            RefreshButton.IsEnabled = true;
+        }
+    }
 
     private void Save_Click(ContentDialog sender, ContentDialogButtonClickEventArgs args)
     {

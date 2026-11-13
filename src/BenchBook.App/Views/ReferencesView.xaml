@@ -41,14 +41,16 @@
             Grid.Row="1"
             SelectionMode="Extended"
             IsItemClickEnabled="False"
-            CanDragItems="False"
+            CanDragItems="True"
+            DragItemsStarting="Gallery_DragItemsStarting"
             DoubleTapped="Gallery_DoubleTapped"
-            KeyDown="Gallery_KeyDown"
+            PreviewKeyDown="Gallery_KeyDown"
             ContextRequested="Gallery_ContextRequested"
             AutomationProperties.Name="References">
             <GridView.ItemTemplate>
                 <DataTemplate x:DataType="vm:ReferenceTile">
-                    <StackPanel Width="220" Padding="6" Spacing="4" AutomationProperties.Name="{x:Bind Title}">
+                    <!-- One fixed size for every tile: the grid sizes all tiles like the first, so room is kept for two title lines and a row of tags. -->
+                    <StackPanel Width="220" Height="256" Padding="6" Spacing="4" AutomationProperties.Name="{x:Bind Title}">
                         <Grid Height="140" CornerRadius="6" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
                             <Image Source="{x:Bind Picture, Mode=OneWay}" Stretch="UniformToFill"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -74,7 +76,7 @@
                                 <TextBlock Text="{x:Bind Duration}" Foreground="White" Style="{StaticResource CaptionTextBlockStyle}" />
                             </Border>
                         </Grid>
-                        <TextBlock Text="{x:Bind Title}" MaxLines="2" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{x:Bind Title}" Height="40" MaxLines="2" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" />
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <FontIcon Glyph="{x:Bind Glyph}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             <TextBlock Text="{x:Bind Details}" Style="{StaticResource CaptionTextBlockStyle}"
@@ -98,6 +100,16 @@
                 </DataTemplate>
             </GridView.ItemTemplate>
         </GridView>
+
+        <!-- The selection rectangle, drawn over the gallery while dragging across empty space. -->
+        <Canvas x:Name="MarqueeLayer" Grid.Row="1" IsHitTestVisible="False">
+            <Rectangle x:Name="Marquee" Visibility="Collapsed" StrokeThickness="1" RadiusX="2" RadiusY="2"
+                       Stroke="{ThemeResource AccentFillColorDefaultBrush}">
+                <Rectangle.Fill>
+                    <SolidColorBrush Color="{ThemeResource SystemAccentColor}" Opacity="0.18" />
+                </Rectangle.Fill>
+            </Rectangle>
+        </Canvas>
 
         <!-- Empty states. -->
         <StackPanel x:Name="EmptyState" Grid.Row="1" MaxWidth="520" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10" Visibility="Collapsed">

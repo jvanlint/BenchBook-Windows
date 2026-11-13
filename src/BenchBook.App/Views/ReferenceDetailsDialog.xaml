@@ -25,7 +25,16 @@
             </StackPanel>
 
             <StackPanel x:Name="LinkSection" Spacing="6" Visibility="Collapsed">
-                <TextBlock x:Name="LinkHeader" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="LinkHeader" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                    <ProgressRing x:Name="Fetching" Grid.Column="1" Width="16" Height="16" IsActive="False" Visibility="Collapsed" />
+                    <Button x:Name="RefreshButton" Grid.Column="2" Content="Refresh" Click="Refresh_Click" />
+                </Grid>
                 <Image x:Name="Poster" MaxHeight="200" Stretch="Uniform" HorizontalAlignment="Left" Visibility="Collapsed" />
                 <TextBlock x:Name="LinkStatus" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Visibility="Collapsed" />
                 <Grid x:Name="LinkRows" ColumnSpacing="16" RowSpacing="4" />

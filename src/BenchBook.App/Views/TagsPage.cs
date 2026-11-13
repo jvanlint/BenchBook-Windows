@@ -15,7 +15,7 @@ internal sealed partial class TagsPage : Page
     private readonly Action<string> _showTag;
     private readonly TextBlock _count = new() { Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] };
     private readonly ListView _list = new() { SelectionMode = ListViewSelectionMode.Extended };
-    private readonly AppBarButton _removeUnused = new() { Label = "Remove Unused Tags", Icon = new FontIcon { Glyph = "" } };
+    private readonly AppBarButton _removeUnused = new() { Label = "Remove Unused Tags", Icon = new FontIcon { Glyph = "\uE74D" } };
     private readonly StackPanel _empty = new() { Spacing = 8, MaxWidth = 480, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 60, 0, 0) };
     private List<TagUsage> _tags = [];
 

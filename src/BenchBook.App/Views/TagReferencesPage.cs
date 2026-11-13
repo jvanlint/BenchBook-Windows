@@ -51,7 +51,7 @@ internal sealed partial class TagReferencesPage : Page
         if (entries.Count == 0)
             _empty.Children.Add(new TextBlock
             {
-                Text = "Nothing has this tag yet. Choose Edit Tags on a reference to add it.",
+                Text = "Nothing has this tag yet. Drag references onto it in the sidebar.",
                 Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
             });
         _groups.Show(entries.Select(e => new ResultRow(e, [])).ToList());

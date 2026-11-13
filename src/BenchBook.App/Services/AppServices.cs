@@ -69,6 +69,21 @@ public sealed class AppServices : IDisposable, IStoreAccess
 
     public void NotifyLibraryChanged() => LibraryChanged?.Invoke(this, EventArgs.Empty);
 
+    /// <summary>
+    /// The drag format for references dragged from the gallery. Private to
+    /// BenchBook, so other apps never mistake it for something to open.
+    /// </summary>
+    public const string ReferencesDragFormat = "BenchBook.References";
+
+    /// <summary>The drag format for a tag dragged from the sidebar onto references.</summary>
+    public const string TagDragFormat = "BenchBook.Tag";
+
+    /// <summary>Raised after references were moved or copied from outside the gallery, e.g. by dropping them on a project.</summary>
+    public event EventHandler<(string Message, string ProjectId, bool CanShow)>? TransferNoticed;
+
+    public void NoticeTransfer(string message, string projectId, bool canShow) =>
+        TransferNoticed?.Invoke(this, (message, projectId, canShow));
+
     T IStoreAccess.With<T>(Func<LibraryStore, T> work) => WithStore(work);
 
     public LibraryLocation Location { get; }

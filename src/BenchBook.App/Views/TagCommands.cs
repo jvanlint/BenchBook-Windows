@@ -86,16 +86,16 @@ internal static class TagCommands
             };
             menu.Items.Add(item);
         }
-        Add("No Colour", null, new FontIcon { Glyph = "" });
+        Add("No Colour", null, new FontIcon { Glyph = "\uE91F" });
         menu.Items.Add(new MenuFlyoutSeparator());
         foreach (var color in TagNames.Colors)
-            Add(NamedColors.DisplayName(color), color, new FontIcon { Glyph = "", Foreground = new SolidColorBrush(NamedColors.TagColor(color)) });
+            Add(NamedColors.DisplayName(color), color, new FontIcon { Glyph = "\uEA3B", Foreground = new SolidColorBrush(NamedColors.TagColor(color)) });
         return menu;
     }
 
     /// <summary>A small coloured dot for a tag.</summary>
     public static FontIcon Dot(string? color, double size = 10) =>
-        new() { Glyph = "", FontSize = size, Foreground = new SolidColorBrush(NamedColors.TagColor(color)) };
+        new() { Glyph = "\uEA3B", FontSize = size, Foreground = new SolidColorBrush(NamedColors.TagColor(color)) };
 
     private static async Task<bool> Run<T>(XamlRoot root, string title, Func<T> work)
     {

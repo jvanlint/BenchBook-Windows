@@ -1,17 +1,21 @@
 using BenchBook.App.Services;
 using BenchBook.App.ViewModels;
+using BenchBook.Core.Capture;
 using BenchBook.Core.Model;
 using BenchBook.Core.Store;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Documents;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 
 namespace BenchBook.App.Views;
 
 /// <summary>One part of a reference that matched a search, e.g. "Box 2: …discolouration…".</summary>
-public sealed record MatchLine(string Label, string Excerpt, IReadOnlyList<(int Start, int Length)> Bold);
+/// <param name="MomentSeconds">For a video moment, its time: clicking the line opens the video there.</param>
+public sealed record MatchLine(string Label, string Excerpt, IReadOnlyList<(int Start, int Length)> Bold, double? MomentSeconds = null);
 
 /// <summary>A reference in a list of results, with what matched.</summary>
 public sealed record ResultRow(ReferenceEntry Entry, IReadOnlyList<MatchLine> Matches);
@@ -51,12 +55,44 @@ internal sealed class ReferenceGroupsView : UserControl
             foreach (var row in group) list.Items.Add(Row(row));
             list.ItemClick += async (_, e) =>
             {
-                if (e.ClickedItem is FrameworkElement { Tag: ResultRow row } && await ReferenceActions.Open(XamlRoot, Services, row.Entry) && Changed is not null)
-                    await Changed();
+                if (e.ClickedItem is FrameworkElement { Tag: ResultRow row }) await Open(row.Entry);
             };
+            list.ContextRequested += List_ContextRequested;
             section.Children.Add(list);
             _groups.Children.Add(section);
         }
+    }
+
+    private async Task Open(ReferenceEntry entry)
+    {
+        if (await ReferenceActions.Open(XamlRoot, Services, entry) && Changed is not null) await Changed();
+    }
+
+    /// <summary>Right-click: Open, Show in Project, Edit Details… (screens.md, "Search").</summary>
+    private void List_ContextRequested(UIElement sender, ContextRequestedEventArgs args)
+    {
+        var element = args.OriginalSource as DependencyObject;
+        while (element is not null && element is not FrameworkElement { Tag: ResultRow }) element = VisualTreeHelper.GetParent(element);
+        if (element is not FrameworkElement { Tag: ResultRow row } target) return;
+        args.Handled = true;
+        var entry = row.Entry;
+
+        var menu = new MenuFlyout();
+        var open = new MenuFlyoutItem { Text = "Open", Icon = new SymbolIcon(Symbol.OpenFile) };
+        open.Click += async (_, _) => await Open(entry);
+        menu.Items.Add(open);
+        var show = new MenuFlyoutItem { Text = "Show in Project" };
+        show.Click += (_, _) => Services.ShowProject?.Invoke(entry.Reference.ProjectId);
+        menu.Items.Add(show);
+        var edit = new MenuFlyoutItem { Text = entry.Reference.Kind == ReferenceKind.Note ? "Edit Note…" : "Edit Details…", Icon = new SymbolIcon(Symbol.Edit) };
+        edit.Click += async (_, _) =>
+        {
+            if (await ReferenceActions.EditDetails(XamlRoot, Services, entry) && Changed is not null) await Changed();
+        };
+        menu.Items.Add(edit);
+
+        if (args.TryGetPosition(sender, out var point)) menu.ShowAt(sender, new FlyoutShowOptions { Position = point });
+        else menu.ShowAt(target);
     }
 
     private FrameworkElement Row(ResultRow row)
@@ -93,11 +129,22 @@ internal sealed class ReferenceGroupsView : UserControl
             Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
             TextTrimming = TextTrimming.CharacterEllipsis,
         });
-        foreach (var match in row.Matches.Take(6)) text.Children.Add(MatchText(match));
+        foreach (var match in row.Matches.Take(6)) text.Children.Add(MatchView(match, row.Entry));
         Grid.SetColumn(text, 1);
         grid.Children.Add(text);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(grid, $"{tile.Title}, {details}");
         return grid;
+    }
+
+    /// <summary>A matched line. A video moment's line is a link that opens the video at that time.</summary>
+    private static FrameworkElement MatchView(MatchLine match, ReferenceEntry entry)
+    {
+        var block = MatchText(match);
+        if (match.MomentSeconds is not { } seconds || entry.Reference.SourcePageUrl is not { } source) return block;
+        var button = new HyperlinkButton { Content = block, Padding = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Left };
+        ToolTipService.SetToolTip(button, $"Open the video at {VideoLink.Format(seconds)}");
+        button.Click += async (_, _) => await Opener.OpenLink(VideoLink.PlaybackUrl(source, seconds));
+        return button;
     }
 
     private static TextBlock MatchText(MatchLine match)

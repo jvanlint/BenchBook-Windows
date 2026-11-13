@@ -43,20 +43,49 @@ public sealed partial class ReferencesView : UserControl
         };
         KeyboardAccelerators.Add(editTags);
         KeyboardAcceleratorPlacementMode = KeyboardAcceleratorPlacementMode.Hidden;
+
+        // Tiles handle their own presses, so listen for handled ones too.
+        Gallery.AddHandler(PointerPressedEvent, new PointerEventHandler(Gallery_PointerPressed), handledEventsToo: true);
+        Gallery.AddHandler(PointerMovedEvent, new PointerEventHandler(Gallery_PointerMoved), handledEventsToo: true);
+        Gallery.AddHandler(PointerReleasedEvent, new PointerEventHandler(Gallery_PointerReleased), handledEventsToo: true);
+        Gallery.AddHandler(PointerCaptureLostEvent, new PointerEventHandler(Gallery_PointerCaptureLost), handledEventsToo: true);
     }
 
     public async Task ShowAsync(AppServices services, Project project)
     {
-        if (_services is not null) _services.LinkDetailsSaved -= LinkDetailsSaved;
+        if (_services is not null)
+        {
+            _services.LinkDetailsSaved -= LinkDetailsSaved;
+            _services.LibraryChanged -= LibraryChanged;
+            _services.TransferNoticed -= TransferNoticed;
+        }
         _services = services;
         _project = project;
         services.LinkDetailsSaved += LinkDetailsSaved;
+        services.LibraryChanged += LibraryChanged;
+        services.TransferNoticed += TransferNoticed;
         Unloaded -= View_Unloaded;
         Unloaded += View_Unloaded;
         await ReloadAsync();
     }
 
-    private void View_Unloaded(object sender, RoutedEventArgs e) => _services.LinkDetailsSaved -= LinkDetailsSaved;
+    private void View_Unloaded(object sender, RoutedEventArgs e)
+    {
+        _services.LinkDetailsSaved -= LinkDetailsSaved;
+        _services.LibraryChanged -= LibraryChanged;
+        _services.TransferNoticed -= TransferNoticed;
+    }
+
+    private bool _notifying;
+
+    /// <summary>The library changed somewhere else, e.g. references dropped on a tag: show it.</summary>
+    private async void LibraryChanged(object? sender, EventArgs e)
+    {
+        if (!_notifying) await ReloadAsync();
+    }
+
+    private void TransferNoticed(object? sender, (string Message, string ProjectId, bool CanShow) notice) =>
+        ShowNotice(notice.Message, notice.ProjectId, notice.CanShow);
 
     /// <summary>A link in this project got its details or poster: show them.</summary>
     private async void LinkDetailsSaved(object? sender, string referenceId)
@@ -207,9 +236,22 @@ public sealed partial class ReferencesView : UserControl
 
     private void View_DragOver(object sender, DragEventArgs e)
     {
-        var data = e.DataView;
-        if (data.Contains(StandardDataFormats.StorageItems) || data.Contains(StandardDataFormats.WebLink)
-            || data.Contains(StandardDataFormats.Bitmap) || data.Contains(StandardDataFormats.Text))
+        if (e.DataView.Contains(AppServices.TagDragFormat))
+        {
+            // A tag from the sidebar, dropped on a tile, tags it (and the rest of the selection, if it's selected).
+            if (TileAt(e.GetPosition(Gallery)) is { } tile)
+            {
+                e.AcceptedOperation = DataPackageOperation.Copy;
+                var count = Gallery.SelectedItems.Contains(tile) ? Selection.Count : 1;
+                e.DragUIOverride.Caption = count == 1 ? $"Tag “{tile.Title}”" : $"Tag {count:N0} references";
+            }
+            else
+            {
+                e.AcceptedOperation = DataPackageOperation.None;
+            }
+            return;
+        }
+        if (CaptureReader.CanCapture(e.DataView))
         {
             e.AcceptedOperation = DataPackageOperation.Copy;
             e.DragUIOverride.Caption = $"Add to {_project.Name}";
@@ -221,7 +263,10 @@ public sealed partial class ReferencesView : UserControl
         var deferral = e.GetDeferral();
         try
         {
-            await CaptureAsync(e.DataView);
+            if (e.DataView.Contains(AppServices.TagDragFormat))
+                await DropTagAsync(e);
+            else if (CaptureReader.CanCapture(e.DataView))
+                await CaptureAsync(e.DataView);
         }
         finally
         {
@@ -229,109 +274,229 @@ public sealed partial class ReferencesView : UserControl
         }
     }
 
+    private async Task DropTagAsync(DragEventArgs e)
+    {
+        if (TileAt(e.GetPosition(Gallery)) is not { } tile) return;
+        if (await e.DataView.GetDataAsync(AppServices.TagDragFormat) is not string tagId) return;
+        var targets = Gallery.SelectedItems.Contains(tile) ? Selection : [tile];
+        var ids = targets.Select(t => t.Reference.Id).ToList();
+        try
+        {
+            _services.WithStore(s => { s.AddTag(tagId, ids); return 0; });
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException error)
+        {
+            await ShowMessage("Couldn't Change Tags", error.Message);
+            return;
+        }
+        await ChangedAsync();
+    }
+
+    /// <summary>The tile under a point in the gallery, if any.</summary>
+    private ReferenceTile? TileAt(Windows.Foundation.Point point)
+    {
+        foreach (var tile in Gallery.Items.OfType<ReferenceTile>())
+        {
+            if (Gallery.ContainerFromItem(tile) is not FrameworkElement container) continue;
+            var bounds = container.TransformToVisual(Gallery).TransformBounds(new Windows.Foundation.Rect(0, 0, container.ActualWidth, container.ActualHeight));
+            if (bounds.Contains(point)) return tile;
+        }
+        return null;
+    }
+
     /// <summary>Reads files, links, pictures and text from a drop or the clipboard, then imports them.</summary>
     private async Task CaptureAsync(DataPackageView data)
     {
-        var items = new List<CapturedItem>();
-        var skipped = new List<string>();
-        var temporary = Path.Combine(Path.GetTempPath(), "BenchBook Capture", Guid.NewGuid().ToString("N"));
-        try
-        {
-            if (data.Contains(StandardDataFormats.StorageItems))
-            {
-                foreach (var item in await data.GetStorageItemsAsync())
-                {
-                    if (item is StorageFile file)
-                    {
-                        var path = file.Path;
-                        if (string.IsNullOrEmpty(path))
-                        {
-                            // A file with no path on disk, e.g. from a browser: copy it out first.
-                            Directory.CreateDirectory(temporary);
-                            var copy = await file.CopyAsync(await StorageFolder.GetFolderFromPathAsync(temporary), file.Name, NameCollisionOption.GenerateUniqueName);
-                            path = copy.Path;
-                        }
-                        items.Add(new CapturedItem.File(path, file.Name));
-                    }
-                    else
-                    {
-                        skipped.Add(item.Name);
-                    }
-                }
-            }
-            else if (data.Contains(StandardDataFormats.WebLink))
-            {
-                var link = await data.GetWebLinkAsync();
-                string? title = null;
-                if (data.Contains(StandardDataFormats.Text))
-                {
-                    var text = (await data.GetTextAsync()).Trim();
-                    if (text.Length > 0 && text != link.OriginalString && text.Length <= 300 && !text.Contains('\n')) title = text;
-                }
-                items.Add(new CapturedItem.Link(link.AbsoluteUri, title));
-            }
-            else if (data.Contains(StandardDataFormats.Bitmap))
-            {
-                // A picture with no file is saved as PNG.
-                Directory.CreateDirectory(temporary);
-                var path = Path.Combine(temporary, $"Pasted Image {DateTime.Now:yyyy-MM-dd HH.mm.ss}.png");
-                var reference = await data.GetBitmapAsync();
-                var folder = await StorageFolder.GetFolderFromPathAsync(temporary);
-                var target = await folder.CreateFileAsync(Path.GetFileName(path));
-                using (var input = await reference.OpenReadAsync())
-                using (var output = await target.OpenAsync(FileAccessMode.ReadWrite))
-                {
-                    var decoder = await BitmapDecoder.CreateAsync(input);
-                    using var bitmap = await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
-                    var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, output);
-                    encoder.SetSoftwareBitmap(bitmap);
-                    await encoder.FlushAsync();
-                }
-                items.Add(new CapturedItem.File(path, Path.GetFileName(path)));
-            }
-            else if (data.Contains(StandardDataFormats.Text))
-            {
-                var text = await data.GetTextAsync();
-                items.Add(ReferenceImporter.IsWebLink(text, out var url) && !text.Trim().Contains(' ')
-                    ? new CapturedItem.Link(url.AbsoluteUri)
-                    : new CapturedItem.Text(text));
-            }
-            if (items.Count > 0 || skipped.Count > 0) await ImportAsync(items, skipped);
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Runtime.InteropServices.COMException)
-        {
-            await ShowMessage("An Item Couldn't Be Added", $"BenchBook couldn't read what was dropped or pasted ({error.Message}).");
-        }
-        finally
-        {
-            try { if (Directory.Exists(temporary)) Directory.Delete(temporary, recursive: true); }
-            catch (IOException) { }
-        }
-    }
-
-    private async Task ImportAsync(IReadOnlyList<CapturedItem> items, IReadOnlyList<string> skipped)
-    {
         Busy.Visibility = Visibility.Visible;
-        List<CaptureOutcome> outcomes;
+        CaptureReport? report;
         try
         {
-            outcomes = await Task.Run(() => _services.Importer.Import(items, _project.Id));
+            report = await CaptureReader.CaptureAsync(_services, data, _project.Id);
         }
         finally
         {
             Busy.Visibility = Visibility.Collapsed;
         }
         await ChangedAsync();
-        // Saving never waits for the network: details arrive in the background.
-        _services.FetchLinkDetails(outcomes.OfType<CaptureOutcome.Added>()
-            .Where(a => a.Reference.Kind is ReferenceKind.VideoLink or ReferenceKind.Webpage).Select(a => a.Reference.Id));
-        if (ReferenceImporter.Report(outcomes, skipped) is { } report) await ShowMessage(report.Title, report.Message);
+        if (report is not null) await ShowMessage(report.Title, report.Message);
+    }
+
+    private async Task ImportAsync(IReadOnlyList<CapturedItem> items, IReadOnlyList<string> skipped)
+    {
+        Busy.Visibility = Visibility.Visible;
+        CaptureReport? report;
+        try
+        {
+            report = await CaptureReader.ImportAsync(_services, items, skipped, _project.Id);
+        }
+        finally
+        {
+            Busy.Visibility = Visibility.Collapsed;
+        }
+        await ChangedAsync();
+        if (report is not null) await ShowMessage(report.Title, report.Message);
     }
 
     private async Task ChangedAsync()
     {
         await ReloadAsync();
-        _services.NotifyLibraryChanged();
+        _notifying = true;
+        try { _services.NotifyLibraryChanged(); }
+        finally { _notifying = false; }
+    }
+
+    // MARK: Dragging tiles out
+
+    /// <summary>Drags the selected references, to drop on a project or tag in the sidebar.</summary>
+    private void Gallery_DragItemsStarting(object sender, DragItemsStartingEventArgs e)
+    {
+        var ids = e.Items.OfType<ReferenceTile>().Select(t => t.Reference.Id).ToList();
+        if (ids.Count == 0 || _marquee is not null)
+        {
+            e.Cancel = true;
+            return;
+        }
+        e.Data.SetData(AppServices.ReferencesDragFormat, string.Join(",", ids));
+        e.Data.RequestedOperation = DataPackageOperation.Move | DataPackageOperation.Copy;
+    }
+
+    // MARK: The selection rectangle
+
+    /// <summary>Where the drag began, in the gallery's scrolled content, so it stays put while scrolling.</summary>
+    private Windows.Foundation.Point? _marquee;
+    private Windows.Foundation.Point _marqueePointer;
+    private HashSet<ReferenceTile> _marqueeStartSelection = [];
+    private ScrollViewer? _scroller;
+    private DispatcherTimer? _autoScroll;
+
+    /// <summary>How close to the top or bottom edge the pointer must be to scroll, and how far each step goes.</summary>
+    private const double ScrollEdge = 32, ScrollStep = 24;
+
+    private ScrollViewer? Scroller => _scroller ??= FindScroller(Gallery);
+
+    private static ScrollViewer? FindScroller(DependencyObject root)
+    {
+        for (var i = 0; i < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(root, i);
+            if (child is ScrollViewer scroller) return scroller;
+            if (FindScroller(child) is { } found) return found;
+        }
+        return null;
+    }
+
+    private Windows.Foundation.Point Offset => new(Scroller?.HorizontalOffset ?? 0, Scroller?.VerticalOffset ?? 0);
+
+    private void Gallery_PointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        var point = e.GetCurrentPoint(Gallery);
+        if (!point.Properties.IsLeftButtonPressed || IsOnTile(e.OriginalSource as DependencyObject) || IsOnScrollBar(e.OriginalSource as DependencyObject)) return;
+        var adding = e.KeyModifiers.HasFlag(Windows.System.VirtualKeyModifiers.Control) || e.KeyModifiers.HasFlag(Windows.System.VirtualKeyModifiers.Shift);
+        _marqueeStartSelection = adding ? Selection.ToHashSet() : [];
+        if (!adding) Gallery.SelectedItems.Clear();
+        var offset = Offset;
+        _marquee = new Windows.Foundation.Point(point.Position.X + offset.X, point.Position.Y + offset.Y);
+        _marqueePointer = point.Position;
+        Gallery.CapturePointer(e.Pointer);
+        e.Handled = true;
+    }
+
+    private void Gallery_PointerMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (_marquee is null) return;
+        _marqueePointer = e.GetCurrentPoint(Gallery).Position;
+        UpdateMarquee();
+        // Near the top or bottom edge, keep scrolling while the pointer stays there.
+        var nearEdge = _marqueePointer.Y < ScrollEdge || _marqueePointer.Y > Gallery.ActualHeight - ScrollEdge;
+        if (nearEdge && _autoScroll is null)
+        {
+            _autoScroll = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(30) };
+            _autoScroll.Tick += AutoScroll_Tick;
+            _autoScroll.Start();
+        }
+        e.Handled = true;
+    }
+
+    private void AutoScroll_Tick(object? sender, object e)
+    {
+        if (_marquee is null || Scroller is not { } scroller) { StopAutoScroll(); return; }
+        var step = _marqueePointer.Y < ScrollEdge ? -ScrollStep
+            : _marqueePointer.Y > Gallery.ActualHeight - ScrollEdge ? ScrollStep
+            : 0;
+        if (step == 0) { StopAutoScroll(); return; }
+        scroller.ChangeView(null, Math.Clamp(scroller.VerticalOffset + step, 0, scroller.ScrollableHeight), null, disableAnimation: true);
+        UpdateMarquee();
+    }
+
+    private void StopAutoScroll()
+    {
+        _autoScroll?.Stop();
+        _autoScroll = null;
+    }
+
+    /// <summary>Draws the rectangle from where the drag began to the pointer, and selects every tile it touches.</summary>
+    private void UpdateMarquee()
+    {
+        if (_marquee is not { } startInContent) return;
+        var offset = Offset;
+        var start = new Windows.Foundation.Point(startInContent.X - offset.X, startInContent.Y - offset.Y);
+        var rect = new Windows.Foundation.Rect(start, _marqueePointer);
+        if (rect.Width < 4 && rect.Height < 4 && Marquee.Visibility == Visibility.Collapsed) return;
+
+        // Draw only the part inside the gallery; the rest has scrolled out of view.
+        var visible = rect;
+        visible.Intersect(new Windows.Foundation.Rect(0, 0, Gallery.ActualWidth, Gallery.ActualHeight));
+        if (visible.IsEmpty) visible = new Windows.Foundation.Rect(0, 0, 0, 0);
+        Marquee.Visibility = Visibility.Visible;
+        Canvas.SetLeft(Marquee, visible.X);
+        Canvas.SetTop(Marquee, visible.Y);
+        Marquee.Width = visible.Width;
+        Marquee.Height = visible.Height;
+
+        // Select every tile the rectangle touches, plus what was selected before when adding.
+        foreach (var tile in Gallery.Items.OfType<ReferenceTile>())
+        {
+            if (Gallery.ContainerFromItem(tile) is not FrameworkElement container) continue;
+            var bounds = container.TransformToVisual(Gallery).TransformBounds(new Windows.Foundation.Rect(0, 0, container.ActualWidth, container.ActualHeight));
+            var selected = Intersects(rect, bounds) || _marqueeStartSelection.Contains(tile);
+            var isSelected = Gallery.SelectedItems.Contains(tile);
+            if (selected && !isSelected) Gallery.SelectedItems.Add(tile);
+            else if (!selected && isSelected) Gallery.SelectedItems.Remove(tile);
+        }
+    }
+
+    private void Gallery_PointerReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (_marquee is null) return;
+        EndMarquee();
+        Gallery.ReleasePointerCapture(e.Pointer);
+        e.Handled = true;
+    }
+
+    private void Gallery_PointerCaptureLost(object sender, PointerRoutedEventArgs e) => EndMarquee();
+
+    private void EndMarquee()
+    {
+        _marquee = null;
+        StopAutoScroll();
+        Marquee.Visibility = Visibility.Collapsed;
+    }
+
+    private static bool Intersects(Windows.Foundation.Rect a, Windows.Foundation.Rect b) =>
+        a.X < b.X + b.Width && b.X < a.X + a.Width && a.Y < b.Y + b.Height && b.Y < a.Y + a.Height;
+
+    private static bool IsOnTile(DependencyObject? element)
+    {
+        for (; element is not null; element = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(element))
+            if (element is GridViewItem) return true;
+        return false;
+    }
+
+    private static bool IsOnScrollBar(DependencyObject? element)
+    {
+        for (; element is not null; element = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(element))
+            if (element is ScrollBar) return true;
+        return false;
     }
 
     // MARK: Opening
@@ -348,6 +513,11 @@ public sealed partial class ReferencesView : UserControl
             case Windows.System.VirtualKey.Enter when Selection.Count > 0:
                 e.Handled = true;
                 await OpenAsync(Selection[0]);
+                break;
+            case Windows.System.VirtualKey.Space when Selection.Count > 0:
+                e.Handled = true;
+                if (Selection[0].Entry.Asset is not null) await OpenFileAsync(Selection[0]);
+                else await OpenAsync(Selection[0]);
                 break;
             case Windows.System.VirtualKey.Delete when Selection.Count > 0:
                 e.Handled = true;
@@ -534,10 +704,17 @@ public sealed partial class ReferencesView : UserControl
             return;
         }
         await ChangedAsync();
-        _noticeProjectId = target.Id;
-        Notice.Message = result.Notice(mode, target.Name);
-        NoticeAction.Content = $"Show {target.Name}";
-        NoticeAction.Visibility = result.Transferred.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        ShowNotice(result.Notice(mode, target.Name), target.Id, result.Transferred.Count > 0);
+    }
+
+    /// <summary>"Moved 3 references to F-16C.", with "Show F-16C".</summary>
+    private void ShowNotice(string message, string projectId, bool canShow)
+    {
+        var name = _services.WithStore(s => s.Project(projectId))?.Name ?? "Project";
+        _noticeProjectId = projectId;
+        Notice.Message = message;
+        NoticeAction.Content = $"Show {name}";
+        NoticeAction.Visibility = canShow ? Visibility.Visible : Visibility.Collapsed;
         Notice.IsOpen = true;
     }
 

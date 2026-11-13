@@ -56,7 +56,8 @@ public sealed class SearchQuery
 }
 
 /// <summary>Where in a reference a search matched, e.g. "Box 2" or "Description".</summary>
-public sealed record SearchMatch(string Label, string Text, bool IsTitle, bool ShownAsLine);
+/// <param name="MomentSeconds">For a video moment, its time, so the result can open the video there.</param>
+public sealed record SearchMatch(string Label, string Text, bool IsTitle, bool ShownAsLine, double? MomentSeconds = null);
 
 public sealed record ReferenceHit(ReferenceEntry Entry, IReadOnlyList<SearchMatch> Matches);
 
@@ -137,10 +138,10 @@ public sealed class LibrarySearch
         var reference = entry.Reference;
         var title = ReferenceText.FallbackTitle(entry);
         var parts = new List<Part>();
-        void Add(string label, string? text, bool isTitle = false, bool line = true)
+        void Add(string label, string? text, bool isTitle = false, bool line = true, double? moment = null)
         {
             var trimmed = text?.Trim();
-            if (!string.IsNullOrEmpty(trimmed)) parts.Add(new Part(new SearchMatch(label, trimmed, isTitle, line), SearchField.Of(trimmed)));
+            if (!string.IsNullOrEmpty(trimmed)) parts.Add(new Part(new SearchMatch(label, trimmed, isTitle, line, moment), SearchField.Of(trimmed)));
         }
         Add("Title", title, isTitle: true, line: false);
         Add("Type", ReferenceText.KindName(reference.Kind), line: false);
@@ -164,7 +165,7 @@ public sealed class LibrarySearch
                 Add($"{MarkupKindName(markup.Kind)} {++number}", markup.Text);
         }
         foreach (var moment in entry.Moments)
-            Add(VideoLink.Format(moment.OffsetSeconds), string.Join(" — ", new[] { moment.Title, moment.Note }.Where(t => t is not null)));
+            Add(VideoLink.Format(moment.OffsetSeconds), string.Join(" — ", new[] { moment.Title, moment.Note }.Where(t => t is not null)), moment: moment.OffsetSeconds);
         return parts;
     }
 

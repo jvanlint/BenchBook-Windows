@@ -1,6 +1,7 @@
 using BenchBook.App.Services;
 using BenchBook.App.Views;
 using BenchBook.Core.Backup;
+using BenchBook.Core.Capture;
 using BenchBook.Core.Model;
 using BenchBook.Core.Projects;
 using BenchBook.Core.Search;
@@ -22,6 +23,13 @@ public sealed partial class MainWindow : Window
     private bool _showAllTags;
     private LibrarySearch? _searchIndex;
     private SearchPage? _searchPage;
+    private readonly List<Tag> _searchTags = [];
+
+    /// <summary>A tag offered as a search token while typing.</summary>
+    private sealed record TagSuggestion(Tag Tag)
+    {
+        public override string ToString() => $"Tag: {Tag.Name}";
+    }
     private readonly AutoSuggestBox _search = new() { PlaceholderText = "Search everything", QueryIcon = new SymbolIcon(Symbol.Find) };
     private readonly List<object> _tagItems = [];
     private const int CollapsedTagCount = 10;
@@ -47,7 +55,12 @@ public sealed partial class MainWindow : Window
 
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_search, "Search everything");
         _search.TextChanged += Search_TextChanged;
-        _search.QuerySubmitted += (_, args) => ShowSearch(args.QueryText);
+        _search.UpdateTextOnSelect = false;
+        _search.QuerySubmitted += (_, args) =>
+        {
+            if (args.ChosenSuggestion is TagSuggestion suggestion) AddSearchTag(suggestion.Tag);
+            else ShowSearch();
+        };
         Navigation.AutoSuggestBox = _search;
         var find = new KeyboardAccelerator { Modifiers = Windows.System.VirtualKeyModifiers.Control, Key = Windows.System.VirtualKey.F };
         find.Invoked += (_, args) =>
@@ -190,7 +203,43 @@ public sealed partial class MainWindow : Window
         Grid.SetColumn(status, 1);
         content.Children.Add(status);
 
-        var item = new NavigationViewItem { Content = content, Tag = project };
+        var item = new NavigationViewItem { Content = content, Tag = project, AllowDrop = true };
+        // References dropped here move to the project; holding Ctrl copies them, as in Explorer.
+        item.DragOver += (_, e) =>
+        {
+            // Files, links or text dropped on a project are added to it, without selecting it.
+            if (CaptureReader.CanCapture(e.DataView))
+            {
+                e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
+                e.DragUIOverride.Caption = $"Add to {project.Name}";
+                return;
+            }
+            if (!e.DataView.Contains(AppServices.ReferencesDragFormat)) return;
+            var copy = e.Modifiers.HasFlag(Windows.ApplicationModel.DataTransfer.DragDrop.DragDropModifiers.Control);
+            e.AcceptedOperation = copy ? Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy : Windows.ApplicationModel.DataTransfer.DataPackageOperation.Move;
+            e.DragUIOverride.Caption = copy ? $"Copy to {project.Name}" : $"Move to {project.Name}";
+        };
+        item.Drop += async (_, e) =>
+        {
+            if (CaptureReader.CanCapture(e.DataView))
+            {
+                var deferral = e.GetDeferral();
+                try
+                {
+                    var report = await CaptureReader.CaptureAsync(_services, e.DataView, project.Id);
+                    _services.NotifyLibraryChanged();
+                    if (report is not null) await ShowMessage(report.Title, report.Message);
+                }
+                finally
+                {
+                    deferral.Complete();
+                }
+                return;
+            }
+            if (await DraggedReferences(e) is not { } ids) return;
+            var mode = e.Modifiers.HasFlag(Windows.ApplicationModel.DataTransfer.DragDrop.DragDropModifiers.Control) ? TransferMode.Copy : TransferMode.Move;
+            await DropOnProject(ids, project, mode);
+        };
         AutomationName(item, string.Join(", ", new[] { project.Name, summary, Words.StatusName(project.Status) }.Where(s => s.Length > 0)));
 
         var menu = new MenuFlyout();
@@ -241,13 +290,43 @@ public sealed partial class MainWindow : Window
     private void Search_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
         if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput) return;
-        ShowSearch(sender.Text);
+        sender.ItemsSource = TagSuggestions(sender.Text);
+        ShowSearch();
     }
 
-    /// <summary>Shows results in place of the page; an empty field goes back to what was selected.</summary>
-    private void ShowSearch(string text)
+    /// <summary>Tags whose name contains the word being typed, offered as tokens.</summary>
+    private List<TagSuggestion> TagSuggestions(string text)
     {
-        if (string.IsNullOrWhiteSpace(text))
+        var word = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+        if (word is null || char.IsWhiteSpace(text[^1])) return [];
+        var folded = SearchField.Fold(word);
+        return _services.WithStore(s => s.TagsByUsage())
+            .Where(u => u.References > 0 && !_searchTags.Any(t => Ids.Comparer.Equals(t.Id, u.Tag.Id)) && SearchField.Fold(u.Tag.Name).Contains(folded, StringComparison.Ordinal))
+            .Take(6).Select(u => new TagSuggestion(u.Tag)).ToList();
+    }
+
+    /// <summary>Turns the word being typed into a tag token.</summary>
+    private void AddSearchTag(Tag tag)
+    {
+        if (!_searchTags.Any(t => Ids.Comparer.Equals(t.Id, tag.Id))) _searchTags.Add(tag);
+        var text = _search.Text.TrimEnd();
+        var space = text.LastIndexOfAny([' ', '\t']);
+        _search.Text = space < 0 ? "" : text[..(space + 1)];
+        _search.ItemsSource = null;
+        ShowSearch();
+    }
+
+    private void RemoveSearchTag(string tagId)
+    {
+        _searchTags.RemoveAll(t => Ids.Comparer.Equals(t.Id, tagId));
+        ShowSearch();
+    }
+
+    /// <summary>Shows results in place of the page; with no words and no tags, goes back to what was selected.</summary>
+    private void ShowSearch()
+    {
+        var text = _search.Text;
+        if (string.IsNullOrWhiteSpace(text) && _searchTags.Count == 0)
         {
             _searchPage = null;
             var selected = Navigation.SelectedItem;
@@ -260,17 +339,25 @@ public sealed partial class MainWindow : Window
         }
         if (_searchPage is null || !ReferenceEquals(ContentFrame.Content, _searchPage))
         {
-            _searchPage = new SearchPage(_services, SearchIndex);
+            _searchPage = new SearchPage(_services, SearchIndex, RemoveSearchTag);
             ContentFrame.Content = _searchPage;
         }
-        _searchPage.Show(text);
+        _searchPage.Show(text, _searchTags.ToList());
+    }
+
+    /// <summary>Leaves search: the field and the tag tokens are cleared.</summary>
+    private void EndSearch()
+    {
+        _search.Text = "";
+        _search.ItemsSource = null;
+        _searchTags.Clear();
+        _searchPage = null;
     }
 
     /// <summary>Selects a project in the sidebar, showing all projects if the filter hides it.</summary>
     private void ShowProject(string projectId)
     {
-        _search.Text = "";
-        _searchPage = null;
+        EndSearch();
         var item = Navigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => i.Tag is Project p && Ids.Comparer.Equals(p.Id, projectId));
         if (item is null && StatusFilter is not null)
         {
@@ -287,6 +374,41 @@ public sealed partial class MainWindow : Window
             _rebuilding = false;
         }
         Navigation.SelectedItem = item;
+    }
+
+    // MARK: Dropping references on the sidebar
+
+    private static async Task<List<string>?> DraggedReferences(DragEventArgs e)
+    {
+        if (!e.DataView.Contains(AppServices.ReferencesDragFormat)) return null;
+        var deferral = e.GetDeferral();
+        try
+        {
+            var text = await e.DataView.GetDataAsync(AppServices.ReferencesDragFormat) as string;
+            var ids = (text ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).ToList();
+            return ids.Count > 0 ? ids : null;
+        }
+        finally
+        {
+            deferral.Complete();
+        }
+    }
+
+    private async Task DropOnProject(List<string> ids, Project project, TransferMode mode)
+    {
+        TransferResult result;
+        try
+        {
+            result = _services.WithStore(s => ReferenceTransfer.Transfer(s, _services.Location, ids, project.Id, mode));
+        }
+        catch (Exception error) when (error is CaptureException or Microsoft.Data.Sqlite.SqliteException)
+        {
+            await ShowMessage(mode == TransferMode.Move ? "Couldn't Move" : "Couldn't Copy", error.Message);
+            return;
+        }
+        if (result.Transferred.Count == 0 && result.Duplicates.Count == 0) return;
+        _services.NotifyLibraryChanged();
+        _services.NoticeTransfer(result.Notice(mode, project.Name), project.Id, result.Transferred.Count > 0);
     }
 
     // MARK: Tags in the sidebar
@@ -339,7 +461,35 @@ public sealed partial class MainWindow : Window
         Grid.SetColumn(count, 2);
         content.Children.Add(count);
 
-        var item = new NavigationViewItem { Content = content, Tag = new TagItem(tag.Id) };
+        var item = new NavigationViewItem { Content = content, Tag = new TagItem(tag.Id), AllowDrop = true, CanDrag = true };
+        // A tag dragged onto references in the gallery tags them.
+        item.DragStarting += (_, e) =>
+        {
+            e.Data.SetData(AppServices.TagDragFormat, tag.Id);
+            e.Data.RequestedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
+        };
+        // References dropped here get the tag.
+        item.DragOver += (_, e) =>
+        {
+            if (!e.DataView.Contains(AppServices.ReferencesDragFormat)) return;
+            // Must be one the gallery offers (move or copy), or Windows refuses the drop.
+            e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
+            e.DragUIOverride.Caption = $"Tag with “{tag.Name}”";
+        };
+        item.Drop += async (_, e) =>
+        {
+            if (await DraggedReferences(e) is not { } ids) return;
+            try
+            {
+                _services.WithStore(s => { s.AddTag(tag.Id, ids); return 0; });
+            }
+            catch (Microsoft.Data.Sqlite.SqliteException error)
+            {
+                await ShowMessage("Couldn't Change Tags", error.Message);
+                return;
+            }
+            _services.NotifyLibraryChanged();
+        };
         AutomationName(item, $"{tag.Name}, {usage.References:N0} {(usage.References == 1 ? "reference" : "references")}");
 
         var menu = new MenuFlyout();
@@ -426,11 +576,7 @@ public sealed partial class MainWindow : Window
     {
         if (_rebuilding) return;
         // Choosing something in the sidebar leaves search.
-        if (_search.Text.Length > 0)
-        {
-            _search.Text = "";
-            _searchPage = null;
-        }
+        if (_search.Text.Length > 0 || _searchTags.Count > 0) EndSearch();
         if (args.IsSettingsSelected)
         {
             ContentFrame.Navigate(typeof(SettingsPage), _services, new SuppressNavigationTransitionInfo());

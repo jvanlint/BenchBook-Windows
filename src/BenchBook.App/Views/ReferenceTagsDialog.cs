@@ -85,7 +85,7 @@ internal sealed class ReferenceTagsDialog : ContentDialog
                 all2.Click += (_, _) => Change(s => s.AddTag(tag.Id, _referenceIds));
                 buttons.Children.Add(all2);
             }
-            var remove = new Button { Content = new FontIcon { Glyph = "", FontSize = 12 } };
+            var remove = new Button { Content = new FontIcon { Glyph = "\uE711", FontSize = 12 } };
             ToolTipService.SetToolTip(remove, $"Remove “{tag.Name}”");
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(remove, $"Remove {tag.Name}");
             remove.Click += (_, _) => Change(s => s.RemoveTag(tag.Id, _referenceIds));
