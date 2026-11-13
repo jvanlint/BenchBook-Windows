@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="BenchBook.App.Views.ReferencesView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:BenchBook.App.ViewModels"
+    AllowDrop="True"
+    DragOver="View_DragOver"
+    Drop="View_Drop">
+
+    <Grid RowSpacing="8" Background="Transparent">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Filter bar: a type menu, a chip for every tag in the project, and the count when filtered. -->
+        <Grid x:Name="FilterBar" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <DropDownButton x:Name="TypeButton" ToolTipService.ToolTip="Show only one type of reference"
+                            AutomationProperties.Name="Type">
+                <DropDownButton.Flyout>
+                    <MenuFlyout x:Name="TypeMenu" Placement="BottomEdgeAlignedLeft" />
+                </DropDownButton.Flyout>
+            </DropDownButton>
+            <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" HorizontalScrollMode="Enabled">
+                <StackPanel x:Name="TagFilters" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" />
+            </ScrollViewer>
+            <StackPanel Grid.Column="2" x:Name="FilterSummary" Orientation="Horizontal" Spacing="8" Visibility="Collapsed">
+                <TextBlock x:Name="FilterCount" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Button Content="Clear" Click="ClearFilters_Click" ToolTipService.ToolTip="Show all references" />
+            </StackPanel>
+        </Grid>
+
+        <GridView
+            x:Name="Gallery"
+            Grid.Row="1"
+            SelectionMode="Extended"
+            IsItemClickEnabled="False"
+            CanDragItems="False"
+            DoubleTapped="Gallery_DoubleTapped"
+            KeyDown="Gallery_KeyDown"
+            ContextRequested="Gallery_ContextRequested"
+            AutomationProperties.Name="References">
+            <GridView.ItemTemplate>
+                <DataTemplate x:DataType="vm:ReferenceTile">
+                    <StackPanel Width="220" Padding="6" Spacing="4" AutomationProperties.Name="{x:Bind Title}">
+                        <Grid Height="140" CornerRadius="6" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                            <Image Source="{x:Bind Picture, Mode=OneWay}" Stretch="UniformToFill"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Visibility="{x:Bind PictureVisibility, Mode=OneWay}" />
+                            <StackPanel Visibility="{x:Bind IconVisibility, Mode=OneWay}" VerticalAlignment="Center" Spacing="8">
+                                <Border Width="56" Height="56" CornerRadius="12" HorizontalAlignment="Center">
+                                    <Image Source="{x:Bind Picture, Mode=OneWay}" Stretch="Uniform" />
+                                </Border>
+                                <TextBlock Text="{x:Bind SiteName}" Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <TextBlock Text="{x:Bind TextPreview}" Visibility="{x:Bind TextVisibility, Mode=OneWay}"
+                                       Margin="10" TextWrapping="Wrap" MaxLines="7" TextTrimming="CharacterEllipsis"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <StackPanel Visibility="{x:Bind GlyphVisibility, Mode=OneWay}" VerticalAlignment="Center" Spacing="6" Padding="8">
+                                <FontIcon Glyph="{x:Bind Glyph}" FontSize="36" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Text="{x:Bind PictureNote, Mode=OneWay}" Visibility="{x:Bind PictureNoteVisibility, Mode=OneWay}"
+                                           Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap" TextAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                            <Border Visibility="{x:Bind DurationVisibility, Mode=OneWay}" Background="#BF000000" CornerRadius="4"
+                                    Padding="5,1" Margin="6" HorizontalAlignment="Right" VerticalAlignment="Bottom">
+                                <TextBlock Text="{x:Bind Duration}" Foreground="White" Style="{StaticResource CaptionTextBlockStyle}" />
+                            </Border>
+                        </Grid>
+                        <TextBlock Text="{x:Bind Title}" MaxLines="2" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" />
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="{x:Bind Glyph}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <TextBlock Text="{x:Bind Details}" Style="{StaticResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                        <ItemsControl ItemsSource="{x:Bind Tags}" Visibility="{x:Bind TagsVisibility}" IsTabStop="False">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" Spacing="4" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:TagChip">
+                                    <Border Background="{x:Bind Fill}" BorderBrush="{x:Bind Stroke}" BorderThickness="1" CornerRadius="9" Padding="7,1">
+                                        <TextBlock Text="{x:Bind Name}" Style="{StaticResource CaptionTextBlockStyle}" />
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </DataTemplate>
+            </GridView.ItemTemplate>
+        </GridView>
+
+        <!-- Empty states. -->
+        <StackPanel x:Name="EmptyState" Grid.Row="1" MaxWidth="520" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10" Visibility="Collapsed">
+            <TextBlock Text="No References" Style="{StaticResource SubtitleTextBlockStyle}" HorizontalAlignment="Center" />
+            <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Text="Drag images, PDFs, Markdown files, links or text here, or paste them with Ctrl+V. You can also write your own notes." />
+            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                <Button Content="Add Files…" Click="AddFiles_Click" />
+                <Button Content="New Note…" Click="NewNote_Click" />
+            </StackPanel>
+        </StackPanel>
+        <StackPanel x:Name="NoMatchState" Grid.Row="1" MaxWidth="520" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="10" Visibility="Collapsed">
+            <TextBlock Text="No Matching References" Style="{StaticResource SubtitleTextBlockStyle}" HorizontalAlignment="Center" />
+            <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                       Text="No references in this project match the type and tags you've chosen." />
+            <Button Content="Clear Filters" Click="ClearFilters_Click" HorizontalAlignment="Center" />
+        </StackPanel>
+
+        <InfoBar x:Name="Notice" Grid.Row="1" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,12"
+                 IsOpen="False" Severity="Informational" IsClosable="True" MaxWidth="640">
+            <InfoBar.ActionButton>
+                <Button x:Name="NoticeAction" Click="NoticeAction_Click" />
+            </InfoBar.ActionButton>
+        </InfoBar>
+
+        <ProgressBar x:Name="Busy" Grid.Row="0" VerticalAlignment="Bottom" IsIndeterminate="True" Visibility="Collapsed" />
+    </Grid>
+</UserControl>

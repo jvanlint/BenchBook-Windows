@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ContentDialog
+    x:Class="BenchBook.App.Views.NoteEditorDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    CloseButtonText="Cancel"
+    DefaultButton="Primary"
+    PrimaryButtonClick="Save_Click">
+    <StackPanel Spacing="12" MinWidth="460">
+        <TextBox x:Name="TitleBox" PlaceholderText="Title (optional)" TextChanged="Changed" AutomationProperties.Name="Title" />
+        <TextBox x:Name="TextBox" PlaceholderText="Write your note…" AcceptsReturn="True" TextWrapping="Wrap"
+                 Height="260" ScrollViewer.VerticalScrollBarVisibility="Auto" TextChanged="Changed" AutomationProperties.Name="Note" />
+        <TextBox x:Name="TagsBox" PlaceholderText="Tags, separated with commas" AutomationProperties.Name="Tags" />
+        <TextBlock x:Name="ErrorText" Visibility="Collapsed" TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+    </StackPanel>
+</ContentDialog>

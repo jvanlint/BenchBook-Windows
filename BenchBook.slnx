@@ -1,0 +1,16 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="ARM64" />
+  </Configurations>
+  <Folder Name="/src/">
+    <Project Path="src/BenchBook.App/BenchBook.App.csproj">
+      <Platform Project="x64" />
+      <Deploy />
+    </Project>
+    <Project Path="src/BenchBook.Core/BenchBook.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BenchBook.Core.Tests/BenchBook.Core.Tests.csproj" />
+  </Folder>
+</Solution>

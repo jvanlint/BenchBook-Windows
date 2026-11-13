@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="BenchBook.App.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="BenchBook">
+    <Window.SystemBackdrop>
+        <MicaBackdrop />
+    </Window.SystemBackdrop>
+
+    <NavigationView
+        x:Name="Navigation"
+        PaneDisplayMode="Left"
+        IsBackButtonVisible="Collapsed"
+        IsSettingsVisible="True"
+        OpenPaneLength="300"
+        SelectionChanged="Navigation_SelectionChanged"
+        Loaded="Navigation_Loaded">
+        <NavigationView.KeyboardAccelerators>
+            <KeyboardAccelerator Modifiers="Control" Key="N" Invoked="NewProject_Invoked" />
+        </NavigationView.KeyboardAccelerators>
+        <Frame x:Name="ContentFrame" />
+    </NavigationView>
+</Window>

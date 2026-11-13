@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="BenchBook.App.Views.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="using:BenchBook.App.ViewModels"
+    xmlns:local="using:BenchBook.App.Views">
+
+    <ScrollViewer>
+        <StackPanel MaxWidth="1000" Margin="40,28,40,40" HorizontalAlignment="Stretch">
+            <TextBlock Text="Settings" Style="{StaticResource TitleTextBlockStyle}" />
+
+            <InfoBar IsOpen="{x:Bind local:XamlHelpers.IsSet(ViewModel.SettingsError), Mode=OneWay}"
+                     Severity="Error" Message="{x:Bind ViewModel.SettingsError, Mode=OneWay}" IsClosable="False" Margin="0,16,0,0" />
+
+            <!-- General -->
+            <TextBlock Text="Links" Style="{StaticResource SectionHeaderStyle}" />
+            <Border Style="{StaticResource CardStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Text="Fetch webpage previews and video details automatically" TextWrapping="Wrap" />
+                        <TextBlock Style="{StaticResource CardDescriptionStyle}"
+                                   Text="After you save a webpage or a YouTube or Vimeo link, BenchBook reads the page for its preview image, title and description, or the video's poster, channel and length. This is the only time BenchBook goes online on its own. When it's off, use Refresh on a link to fetch its details." />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" IsOn="{x:Bind ViewModel.FetchLinkDetails, Mode=TwoWay}" OnContent="On" OffContent="Off"
+                                  AutomationProperties.Name="Fetch webpage previews and video details automatically" MinWidth="0" />
+                </Grid>
+            </Border>
+
+            <TextBlock Text="Image Viewer" Style="{StaticResource SectionHeaderStyle}" />
+            <StackPanel Spacing="4">
+                <Border Style="{StaticResource CardStyle}">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Open images at" VerticalAlignment="Center" />
+                        <ComboBox Grid.Column="1" SelectedIndex="{x:Bind ViewModel.ImageOpenIndex, Mode=TwoWay}" MinWidth="180"
+                                  AutomationProperties.Name="Open images at">
+                            <x:String>Fit to Window</x:String>
+                            <x:String>Actual Size</x:String>
+                        </ComboBox>
+                    </Grid>
+                </Border>
+                <Border Style="{StaticResource CardStyle}">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Show note boxes when an image opens" VerticalAlignment="Center" />
+                        <ToggleSwitch Grid.Column="1" IsOn="{x:Bind ViewModel.ShowNoteBoxes, Mode=TwoWay}" OnContent="On" OffContent="Off"
+                                      AutomationProperties.Name="Show note boxes when an image opens" MinWidth="0" />
+                    </Grid>
+                </Border>
+            </StackPanel>
+
+            <TextBlock Text="Projects" Style="{StaticResource SectionHeaderStyle}" />
+            <Border Style="{StaticResource CardStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Status for new projects" VerticalAlignment="Center" />
+                    <ComboBox x:Name="StatusBox" Grid.Column="1" SelectedIndex="{x:Bind ViewModel.NewProjectStatusIndex, Mode=TwoWay}" MinWidth="180"
+                              AutomationProperties.Name="Status for new projects" />
+                </Grid>
+            </Border>
+
+            <!-- Library -->
+            <TextBlock Text="Library" Style="{StaticResource SectionHeaderStyle}" />
+            <StackPanel Spacing="4">
+                <Border Style="{StaticResource CardStyle}">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center" Spacing="2">
+                            <TextBlock Text="Location" />
+                            <TextBlock Style="{StaticResource CardDescriptionStyle}" Text="{x:Bind ViewModel.LibraryPath}" IsTextSelectionEnabled="True" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="Show in Explorer" Click="ShowLibrary_Click" />
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Space Used" />
+                        <Grid ColumnSpacing="24" RowSpacing="4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition />
+                                <RowDefinition />
+                                <RowDefinition />
+                                <RowDefinition />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="Saved files" Style="{StaticResource CardDescriptionStyle}" />
+                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SavedFilesSize, Mode=OneWay}" HorizontalAlignment="Right" />
+                            <TextBlock Grid.Row="1" Text="Thumbnails" Style="{StaticResource CardDescriptionStyle}" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="{x:Bind ViewModel.ThumbnailsSize, Mode=OneWay}" HorizontalAlignment="Right" />
+                            <TextBlock Grid.Row="2" Text="Posters and previews" Style="{StaticResource CardDescriptionStyle}" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" Text="{x:Bind ViewModel.PostersSize, Mode=OneWay}" HorizontalAlignment="Right" />
+                            <TextBlock Grid.Row="3" Text="Total" FontWeight="SemiBold" />
+                            <TextBlock Grid.Row="3" Grid.Column="1" Text="{x:Bind ViewModel.TotalSize, Mode=OneWay}" FontWeight="SemiBold" HorizontalAlignment="Right" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardStyle}">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center" Spacing="2">
+                            <TextBlock Text="Remove unused files" />
+                            <TextBlock Style="{StaticResource CardDescriptionStyle}"
+                                       Text="Deletes saved files and previews that nothing uses any more, such as leftovers from an interrupted import. BenchBook also does this at launch." />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="Clean Up Now" Click="CleanUp_Click" IsEnabled="{x:Bind local:XamlHelpers.Not(ViewModel.IsWorking), Mode=OneWay}" />
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource CardStyle}">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center" Spacing="2">
+                            <TextBlock Text="Clear thumbnails" />
+                            <TextBlock Style="{StaticResource CardDescriptionStyle}"
+                                       Text="Deletes the gallery's thumbnails. Each is made again from its file when it's next shown." />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="Clear Thumbnails" Click="ClearThumbnails_Click" />
+                    </Grid>
+                </Border>
+
+                <TextBlock Text="{x:Bind ViewModel.MaintenanceStatus, Mode=OneWay}" Style="{StaticResource CardDescriptionStyle}" Margin="2,4,0,0" />
+            </StackPanel>
+
+            <!-- Backup -->
+            <TextBlock Text="Back Up" Style="{StaticResource SectionHeaderStyle}" />
+            <StackPanel Spacing="4">
+                <Border Style="{StaticResource CardStyle}">
+                    <Grid ColumnSpacing="16" RowSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <StackPanel VerticalAlignment="Center" Spacing="2">
+                            <TextBlock Text="Back up your library" />
+                            <TextBlock Style="{StaticResource CardDescriptionStyle}"
+                                       Text="Saves every project, reference, note, paint and original file into one file. Keep it on another drive or in cloud storage." />
+                            <TextBlock Style="{StaticResource CardDescriptionStyle}" Text="{x:Bind ViewModel.LastBackupText, Mode=OneWay}" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="Back Up Library…" Click="BackUp_Click" IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                        <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Spacing="4" Visibility="{x:Bind ViewModel.IsBackingUp, Mode=OneWay}">
+                            <TextBlock Text="Backing up…" Style="{StaticResource CardDescriptionStyle}" />
+                            <ProgressBar Value="{x:Bind ViewModel.BackupProgress, Mode=OneWay}" Maximum="100" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <Border Style="{StaticResource CardStyle}">
+                    <Grid ColumnSpacing="16" RowSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <StackPanel VerticalAlignment="Center" Spacing="2">
+                            <TextBlock Text="Restore a backup" />
+                            <TextBlock Style="{StaticResource CardDescriptionStyle}"
+                                       Text="Replaces this library with the backup. BenchBook checks the backup first, then closes and reopens to finish. The library you have now is kept." />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="Restore from Backup…" Click="Restore_Click" IsEnabled="{x:Bind ViewModel.IsIdle, Mode=OneWay}" />
+                        <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="8" Visibility="{x:Bind ViewModel.IsChecking, Mode=OneWay}">
+                            <ProgressRing IsActive="{x:Bind ViewModel.IsChecking, Mode=OneWay}" Width="16" Height="16" />
+                            <TextBlock Text="Checking the backup…" Style="{StaticResource CardDescriptionStyle}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <TextBlock Text="{x:Bind ViewModel.BackupStatus, Mode=OneWay}" Style="{StaticResource CardDescriptionStyle}" Margin="2,4,0,0" />
+            </StackPanel>
+
+            <StackPanel Visibility="{x:Bind ViewModel.HasPreviousLibraries, Mode=OneWay}">
+                <TextBlock Text="Kept from Before a Restore" Style="{StaticResource SectionHeaderStyle}" />
+                <ItemsControl ItemsSource="{x:Bind ViewModel.PreviousLibraries}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Spacing="4" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:PreviousLibraryItem">
+                            <Border Style="{StaticResource CardStyle}">
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{x:Bind Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                    <Button Grid.Column="1" Content="Show in Explorer" Tag="{x:Bind Path}" Click="ShowPrevious_Click" />
+                                    <Button Grid.Column="2" Content="Move to Recycle Bin…" Tag="{x:Bind Path}" Click="RecyclePrevious_Click" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Style="{StaticResource CardDescriptionStyle}" Margin="2,8,0,0"
+                           Text="Each is the whole library as it was before a restore. Keep it until you're sure the restore has everything." />
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

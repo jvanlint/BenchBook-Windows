@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="BenchBook.App.Views.ProjectPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:BenchBook.App.Views">
+
+    <Page.KeyboardAccelerators>
+        <KeyboardAccelerator Modifiers="Control" Key="Number1" Invoked="Tab1_Invoked" />
+        <KeyboardAccelerator Modifiers="Control" Key="Number2" Invoked="Tab2_Invoked" />
+        <KeyboardAccelerator Modifiers="Control" Key="Number3" Invoked="Tab3_Invoked" />
+    </Page.KeyboardAccelerators>
+
+    <Grid Padding="32,20,32,12" RowSpacing="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Name and summary, then the commands. -->
+        <Grid ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Spacing="2">
+                <TextBlock x:Name="NameText" Style="{StaticResource TitleTextBlockStyle}" TextWrapping="Wrap" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon x:Name="StatusIcon" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock x:Name="SummaryText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                </StackPanel>
+            </StackPanel>
+            <CommandBar Grid.Column="1" DefaultLabelPosition="Right" IsDynamicOverflowEnabled="True" Background="Transparent" VerticalAlignment="Top">
+                <AppBarButton x:Name="AddFilesButton" Label="Add Files…" Icon="Add" Click="AddFiles_Click" ToolTipService.ToolTip="Add Files (Ctrl+O)">
+                    <AppBarButton.KeyboardAccelerators>
+                        <KeyboardAccelerator Modifiers="Control" Key="O" />
+                    </AppBarButton.KeyboardAccelerators>
+                </AppBarButton>
+                <AppBarButton x:Name="NewNoteButton" Label="New Note…" Click="NewNote_Click" ToolTipService.ToolTip="New Note (Ctrl+Shift+N)">
+                    <AppBarButton.Icon>
+                        <FontIcon Glyph="&#xE70B;" />
+                    </AppBarButton.Icon>
+                    <AppBarButton.KeyboardAccelerators>
+                        <KeyboardAccelerator Modifiers="Control,Shift" Key="N" />
+                    </AppBarButton.KeyboardAccelerators>
+                </AppBarButton>
+                <AppBarButton Label="Edit Project" Icon="Edit" Click="Edit_Click" ToolTipService.ToolTip="Edit Project (Ctrl+I)">
+                    <AppBarButton.KeyboardAccelerators>
+                        <KeyboardAccelerator Modifiers="Control" Key="I" />
+                    </AppBarButton.KeyboardAccelerators>
+                </AppBarButton>
+                <CommandBar.SecondaryCommands>
+                    <AppBarButton Label="Delete Project…" Icon="Delete" Click="Delete_Click" />
+                </CommandBar.SecondaryCommands>
+            </CommandBar>
+        </Grid>
+
+        <SelectorBar Grid.Row="1" x:Name="Tabs" SelectionChanged="Tabs_SelectionChanged">
+            <SelectorBarItem x:Name="ReferencesTab" Text="References" IsSelected="True" />
+            <SelectorBarItem x:Name="PaintTab" Text="Paint" />
+            <SelectorBarItem x:Name="AftermarketTab" Text="Aftermarket" />
+        </SelectorBar>
+
+        <local:ReferencesView x:Name="References" Grid.Row="2" />
+
+        <StackPanel x:Name="LaterTab" Grid.Row="2" MaxWidth="480" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8" Visibility="Collapsed">
+            <TextBlock x:Name="LaterTitle" Style="{StaticResource SubtitleTextBlockStyle}" HorizontalAlignment="Center" />
+            <TextBlock Text="This tab arrives in the next phase of BenchBook for Windows."
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" />
+        </StackPanel>
+    </Grid>
+</Page>
