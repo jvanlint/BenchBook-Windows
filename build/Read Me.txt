@@ -1,0 +1,30 @@
+BenchBook for Windows
+=====================
+
+A private reference library for scale modellers.
+
+To run it
+---------
+
+1. Move this BenchBook folder wherever you like, e.g. into Documents.
+2. Open it and double-click BenchBook.exe.
+3. The first time, Windows may say "Windows protected your PC". This download
+   isn't signed with a certificate. Choose "More info", then "Run anyway".
+
+To keep it handy, right-click BenchBook.exe and choose "Pin to Start" or
+"Pin to taskbar".
+
+Your library
+------------
+
+Your library is kept in %LOCALAPPDATA%\BenchBook, not in this folder. Deleting
+or replacing this folder never deletes your library.
+
+To update, close BenchBook, delete this folder and unzip the new version in its
+place.
+
+BenchBook stays on your computer. It has no accounts and sends nothing about
+you anywhere. It only goes online to fetch the title and picture for links you
+save, which you can turn off in Settings.
+
+https://github.com/jvanlint/BenchBook-Windows

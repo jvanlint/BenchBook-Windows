@@ -18,6 +18,16 @@
     <ApplicationIcon>Assets\BenchBook.ico</ApplicationIcon>
   </PropertyGroup>
 
+  <!--
+    A release can also be built as a plain folder with BenchBook.exe, for a zip
+    download that needs no signing: -p:BenchBookUnpackaged=true (build\Release.ps1).
+    Without a package there's no share target and no automatic updates.
+  -->
+  <PropertyGroup Condition="'$(BenchBookUnpackaged)' == 'true'">
+    <WindowsPackageType>None</WindowsPackageType>
+    <SelfContained>true</SelfContained>
+  </PropertyGroup>
+
   <ItemGroup>
     <!-- Copied next to the app, where the registered package and its resource index look for them. -->
     <Content Include="Assets\*.png" CopyToOutputDirectory="PreserveNewest" />

@@ -1,0 +1,108 @@
+# Builds BenchBook's downloads and makes a draft GitHub Release.
+#
+# - Push a tag such as v0.2.0: the tests run, both zips are built, and a draft
+#   release for v0.2.0 is made with them attached. Nothing is public until you
+#   publish the draft on GitHub.
+# - Run it by hand (Actions > Release > Run workflow): the same build, with the
+#   zips kept as a workflow artifact for a few days instead of a release.
+#
+# The zips are unpackaged and unsigned (CLAUDE.md, "Releasing").
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to stamp on the trial build, e.g. 0.2.0-test"
+        required: true
+        default: "0.0.0-test"
+
+permissions:
+  contents: write # Only to create the draft release.
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+        with:
+          # Every commit, so the build number can count them and the notes can list them.
+          fetch-depth: 0
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Choose the version
+        id: version
+        run: |
+          if ("${{ github.event_name }}" -eq "push") { $version = "${{ github.ref_name }}".TrimStart("v") }
+          else { $version = "${{ inputs.version }}".TrimStart("v") }
+          "value=$version" >> $env:GITHUB_OUTPUT
+          # 0.x versions and ones like 1.0.0-beta.1 are marked as pre-releases.
+          "prerelease=$(($version -like '0.*') -or ($version -like '*-*'))".ToLowerInvariant() >> $env:GITHUB_OUTPUT
+
+      - name: Run the Core tests
+        run: dotnet test --project tests/BenchBook.Core.Tests -c Release
+
+      - name: Run the PDF tests
+        run: dotnet test --project tests/BenchBook.Pdf.Tests -c Release
+
+      - name: Build the zips
+        run: ./build/Release.ps1 -Version "${{ steps.version.outputs.value }}" -Output artifacts
+
+      # Signing goes here once there's a certificate. Its secrets are added by the
+      # repository's owner in Settings > Secrets and variables > Actions, and never
+      # written into this file.
+
+      - name: Keep the trial build
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: BenchBook-${{ steps.version.outputs.value }}
+          path: artifacts/*
+          retention-days: 7
+
+      - name: Write the release notes
+        if: github.event_name == 'push'
+        run: |
+          $previous = git describe --tags --abbrev=0 "${{ github.ref_name }}^" 2>$null
+          $range = if ($LASTEXITCODE -eq 0 -and $previous) { "$previous..${{ github.ref_name }}" } else { "${{ github.ref_name }}" }
+          $changes = git log $range --no-merges --pretty=format:"- %s"
+          @"
+          ## Download
+
+          - **Most PCs:** BenchBook-${{ steps.version.outputs.value }}-win-x64.zip
+          - **Arm PCs** (e.g. Surface Pro X, Copilot+ PCs): BenchBook-${{ steps.version.outputs.value }}-win-arm64.zip
+
+          Unzip it, open the BenchBook folder and run BenchBook.exe. This download isn't signed, so the first
+          time Windows may say "Windows protected your PC": choose **More info**, then **Run anyway**.
+          Your library stays in ``%LOCALAPPDATA%\BenchBook``, so replacing the folder with a newer version keeps it.
+
+          Needs Windows 10 (version 2004) or later. SHA256SUMS.txt has the checksums.
+
+          ## Changes
+
+          $($changes -join "`n")
+          "@ -replace '(?m)^          ', '' | Set-Content notes.md -Encoding utf8
+
+      - name: Create the draft release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $flags = @("--draft", "--title", "BenchBook ${{ steps.version.outputs.value }}", "--notes-file", "notes.md", "--verify-tag")
+          if ("${{ steps.version.outputs.prerelease }}" -eq "true") { $flags += "--prerelease" }
+          gh release create "${{ github.ref_name }}" @flags (Get-ChildItem artifacts -File).FullName

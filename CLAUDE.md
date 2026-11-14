@@ -113,6 +113,28 @@ tests\BenchBook.Pdf.Tests\  PDF tests, on PDFs made with PDFium itself
   the Mac's `CaptureEnvelope` does. The running app (`Share\ShareInbox`) imports
   envelopes at launch and as they arrive.
 
+## Releasing
+
+Decided with the user on 2026-11-14: releases are direct downloads from GitHub
+Releases. There's no Store, and for now no certificate. The user is an
+individual in Australia, so Azure Artifact Signing isn't available; signing
+would need a paid OV certificate with cloud signing.
+
+- Releases are unpackaged, unsigned zips, one for x64 and one for Arm64, each a
+  `BenchBook` folder with `BenchBook.exe`, plus `SHA256SUMS.txt`. Windows warns
+  the first time the app runs. Without a package there's no share target and
+  no automatic updates.
+- `build\Release.ps1 -Version 0.2.0` builds them into `artifacts\`, the same on
+  a PC as on GitHub. It publishes with `-p:BenchBookUnpackaged=true` and stamps
+  the `.exe` as `0.2.0.<commit count>`. Settings shows "0.2.0 (123)".
+- `.github\workflows\release.yml` runs on a pushed `v*.*.*` tag: it runs the
+  tests, builds the zips and makes a **draft** release, marked as a
+  pre-release for 0.x. The user publishes it. Run by hand, it keeps the zips as
+  a workflow artifact instead.
+- Versions stay 0.x until Phase 1 lets the two apps share backups, then follow
+  the Mac's 1.x.y.
+- Day-to-day builds stay MSIX (`Package.appxmanifest`, development package).
+
 ## Working rules
 
 These are the user's rules for the Mac app, and they apply here too.

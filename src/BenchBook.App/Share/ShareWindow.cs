@@ -42,7 +42,7 @@ internal sealed class ShareWindow : Window
         _inbox = new CaptureInbox(_location.InboxFolder);
         Title = "Add to BenchBook";
         SystemBackdrop = new MicaBackdrop();
-        AppWindow.SetIcon("Assets/BenchBook.ico");
+        AppWindow.SetIcon(App.IconPath);
         if (AppWindow.Presenter is OverlappedPresenter presenter)
         {
             presenter.IsMaximizable = false;

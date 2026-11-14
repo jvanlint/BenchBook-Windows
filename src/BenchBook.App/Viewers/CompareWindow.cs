@@ -54,7 +54,7 @@ internal sealed partial class CompareWindow : Window
     {
         _services = services;
         SystemBackdrop = new MicaBackdrop();
-        AppWindow.SetIcon("Assets/BenchBook.ico");
+        AppWindow.SetIcon(App.IconPath);
         WindowFrames.Restore(this, services, "compare", 1400, 820);
         Closed += (_, _) => { CommitTyping(); WindowFrames.Save(this, services, "compare"); };
 

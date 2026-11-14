@@ -7,3 +7,4 @@ AppPackages/
 BundleArtifacts/
 TestResults/
 *.binlog
+artifacts/

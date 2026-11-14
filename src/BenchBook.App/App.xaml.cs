@@ -49,6 +49,9 @@ public partial class App : Application
 
     public static Window? MainWindow => (Current as App)?._window;
 
+    /// <summary>The icon for every window's title bar, next to BenchBook.exe whether or not it's packaged.</summary>
+    public static string IconPath { get; } = Path.Combine(AppContext.BaseDirectory, "Assets", "BenchBook.ico");
+
     /// <summary>Imports what the share window sends, and publishes the projects it lists.</summary>
     internal static Share.ShareInbox? Inbox { get; private set; }
 

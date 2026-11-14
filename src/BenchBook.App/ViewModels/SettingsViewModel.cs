@@ -195,7 +195,10 @@ public sealed partial class SettingsViewModel : ObservableObject
         HasPreviousLibraries = PreviousLibraries.Count > 0;
     }
 
-    /// <summary>e.g. "0.1.0", from the package.</summary>
+    /// <summary>
+    /// e.g. "0.1.0" from the package, or "0.2.0 (123)" from a release zip, where
+    /// the build number counts commits, as on the Mac.
+    /// </summary>
     public static string AppVersion()
     {
         try
@@ -205,9 +208,14 @@ public sealed partial class SettingsViewModel : ObservableObject
         }
         catch (Exception)
         {
-            // Not running from a package, so there's no package version.
-            var version = typeof(SettingsViewModel).Assembly.GetName().Version ?? new Version(0, 0, 0);
-            return $"{version.Major}.{version.Minor}.{version.Build}";
+            // Not running from a package: the release script stamps the version on the .exe.
+            var assembly = typeof(SettingsViewModel).Assembly;
+            var informational = assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+                .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion;
+            var file = assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyFileVersionAttribute), false)
+                .OfType<System.Reflection.AssemblyFileVersionAttribute>().FirstOrDefault()?.Version;
+            var shown = (informational ?? "0.0.0").Split('+')[0];
+            return Version.TryParse(file, out var parsed) && parsed.Revision > 0 ? $"{shown} ({parsed.Revision})" : shown;
         }
     }
 }

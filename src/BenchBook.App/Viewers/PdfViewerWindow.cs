@@ -105,7 +105,7 @@ internal sealed partial class PdfViewerWindow : Window
         _entry = entry;
         Open[entry.Reference.Id] = this;
         SystemBackdrop = new MicaBackdrop();
-        AppWindow.SetIcon("Assets/BenchBook.ico");
+        AppWindow.SetIcon(App.IconPath);
         WindowFrames.Restore(this, services, "pdf", 1280, 900);
         Content = Build();
         Closed += (_, _) =>

@@ -22,7 +22,7 @@ internal sealed partial class MarkdownWindow : Window
     private MarkdownWindow(AppServices services, ReferenceEntry entry)
     {
         SystemBackdrop = new MicaBackdrop();
-        AppWindow.SetIcon("Assets/BenchBook.ico");
+        AppWindow.SetIcon(App.IconPath);
         WindowFrames.Restore(this, services, "markdown", 820, 900);
         Closed += (_, _) => WindowFrames.Save(this, services, "markdown");
         Title = ReferenceText.FallbackTitle(entry);

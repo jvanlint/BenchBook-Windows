@@ -47,7 +47,7 @@ public sealed partial class MainWindow : Window
         // Opens at the size and place it had when it was last closed.
         Viewers.WindowFrames.Restore(this, services, "main", 1200, 800);
         Closed += (_, _) => Viewers.WindowFrames.Save(this, services, "main");
-        AppWindow.SetIcon("Assets/BenchBook.ico");
+        AppWindow.SetIcon(App.IconPath);
         BuildSidebar(select: null);
         // Tag counts change as references are tagged, so the Tags section follows the library.
         services.LibraryChanged += (_, _) => DispatcherQueue.TryEnqueue(() =>
