@@ -35,13 +35,13 @@ jobs:
         shell: pwsh
     steps:
       - name: Get the code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
         with:
           # Every commit, so the build number can count them and the notes can list them.
           fetch-depth: 0
 
       - name: Install .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6.0.0
         with:
           dotnet-version: "10.0.x"
 
@@ -69,7 +69,7 @@ jobs:
 
       - name: Keep the trial build
         if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: BenchBook-${{ steps.version.outputs.value }}
           path: artifacts/*
