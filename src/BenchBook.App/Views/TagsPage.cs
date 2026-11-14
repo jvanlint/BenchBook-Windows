@@ -125,14 +125,17 @@ internal sealed partial class TagsPage : Page
         return grid;
     }
 
-    private static TextBlock Cell(string text, bool header) => new()
+    private static TextBlock Cell(string text, bool header)
     {
-        Text = text,
-        VerticalAlignment = VerticalAlignment.Center,
-        TextTrimming = TextTrimming.CharacterEllipsis,
-        Style = header ? (Style)Application.Current.Resources["CaptionTextBlockStyle"] : null,
-        Foreground = header ? (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] : null,
-    };
+        var block = new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+        // Only set for headers: a null Foreground draws the text with no brush at all.
+        if (header)
+        {
+            block.Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"];
+            block.Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
+        }
+        return block;
+    }
 
     private List<TagUsage> Selected() =>
         _list.SelectedItems.OfType<FrameworkElement>().Select(e => e.DataContext).OfType<TagUsage>().ToList();

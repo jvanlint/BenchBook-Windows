@@ -55,6 +55,9 @@ internal sealed class PaintPickerDialog : ContentDialog
                 Hide();
             }
         };
+        // Choosing for a colour starts with its standard in the search, as on the Mac
+        // (PaintPickerView.swift), so only matching paints are listed.
+        if (forColour && !string.IsNullOrWhiteSpace(standard)) _search.Text = standard;
         _search.TextChanged += (_, _) => Filter();
         PrimaryButtonClick += (_, _) => { Chosen = _list.SelectedItems.OfType<Paint>().ToList(); Result = PickerResult.Picked; };
         SecondaryButtonClick += (_, _) => Result = PickerResult.NewPaint;
@@ -64,7 +67,11 @@ internal sealed class PaintPickerDialog : ContentDialog
         panel.Children.Add(_list);
         panel.Children.Add(_empty);
         Content = panel;
-        Opened += (_, _) => _search.Focus(FocusState.Programmatic);
+        Opened += (_, _) =>
+        {
+            _search.Focus(FocusState.Programmatic);
+            _search.SelectAll();
+        };
         Filter();
     }
 

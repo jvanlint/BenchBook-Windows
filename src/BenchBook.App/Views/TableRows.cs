@@ -55,12 +55,13 @@ internal static class TableRows
         return element;
     }
 
-    public static TextBlock Text(string text, bool secondary = false) => new()
+    public static TextBlock Text(string text, bool secondary = false)
     {
-        Text = text,
-        TextTrimming = TextTrimming.CharacterEllipsis,
-        Foreground = secondary ? (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] : null,
-    };
+        var block = new TextBlock { Text = text, TextTrimming = TextTrimming.CharacterEllipsis };
+        // Only set when secondary: a null Foreground draws the text with no brush at all.
+        if (secondary) block.Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
+        return block;
+    }
 
     /// <summary>Two lines: the main text, and smaller secondary text under it.</summary>
     public static StackPanel TwoLines(string first, string second)
