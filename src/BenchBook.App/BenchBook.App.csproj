@@ -15,10 +15,12 @@
     <!-- The Windows App SDK runtime ships inside the package, so a direct download needs nothing else installed. -->
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationIcon>Assets\BenchBook.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <Content Include="Assets\*.png" />
+    <Content Include="Assets\BenchBook.ico" />
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>
 

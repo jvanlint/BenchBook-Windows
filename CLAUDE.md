@@ -101,7 +101,11 @@ tests\BenchBook.Pdf.Tests\  PDF tests, on PDFs made with PDFium itself
 - The store's tables mirror `library.json`, with camelCase column names taken
   from the record properties (`Store\TableMap.cs`). Schema changes are new
   numbered steps in `Store\Migrations.cs`; never edit a released step.
-- The app icons in `Assets\` are placeholders.
+- The app icons in `Assets\` are made from the Mac icon
+  (`..\BenchBook\BenchBook\Assets.xcassets\AppIcon.appiconset`) at each scale
+  and target size, with `BenchBook.ico` for the windows and the `.exe`. A
+  changed manifest needs a higher package version before
+  `Add-AppxPackage -Register` accepts it.
 - Sharing: choosing BenchBook in the Windows share sheet starts a second
   process that shows only `Share\ShareWindow`. It never opens the store or
   finishes a restore. It reads `Inbox\Projects.json` (published by the running

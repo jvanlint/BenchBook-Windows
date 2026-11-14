@@ -110,7 +110,7 @@ internal sealed partial class ImageViewerWindow : Window
         _entry = entry;
         Open[entry.Reference.Id] = this;
         SystemBackdrop = new MicaBackdrop();
-        AppWindow.SetIcon("Assets/Square44x44Logo.png");
+        AppWindow.SetIcon("Assets/BenchBook.ico");
         WindowFrames.Restore(this, services, "image", 1100, 760);
         Content = Build();
         _showBoxes.IsChecked = services.Settings.ShowNoteBoxes;
