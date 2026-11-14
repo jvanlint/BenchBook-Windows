@@ -45,6 +45,26 @@ public static class FileInspector
 
     private static readonly HashSet<string> MarkdownExtensions = new(StringComparer.OrdinalIgnoreCase) { ".md", ".markdown", ".mdown", ".mkd" };
 
+    /// <summary>
+    /// A quick look at whether a file is a kind BenchBook saves: an image or PDF by
+    /// its first bytes, or Markdown by its name. The full checks happen on import.
+    /// </summary>
+    public static bool LooksSaveable(string path, string displayName)
+    {
+        if (MarkdownExtensions.Contains(Path.GetExtension(displayName)) || MarkdownExtensions.Contains(Path.GetExtension(path))) return true;
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var header = new byte[1024];
+            var start = header.AsSpan(0, stream.ReadAtLeast(header, header.Length, throwOnEndOfStream: false));
+            return ImageHeaders.Recognise(start) is not null || start.IndexOf("%PDF-"u8) >= 0;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     /// <param name="path">The file to check.</param>
     /// <param name="displayName">The name to use in messages.</param>
     /// <param name="pdfHasPages">Opens a PDF and says whether it has at least one page.</param>

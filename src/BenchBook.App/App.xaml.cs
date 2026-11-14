@@ -49,8 +49,23 @@ public partial class App : Application
 
     public static Window? MainWindow => (Current as App)?._window;
 
+    /// <summary>Imports what the share window sends, and publishes the projects it lists.</summary>
+    internal static Share.ShareInbox? Inbox { get; private set; }
+
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        // Chosen in the Windows share sheet: this process only shows the share window.
+        // It doesn't open the library or finish a restore; the running app imports what it sends.
+        var activation = Microsoft.Windows.AppLifecycle.AppInstance.GetCurrent().GetActivatedEventArgs();
+        if (activation.Kind == Microsoft.Windows.AppLifecycle.ExtendedActivationKind.ShareTarget
+            && activation.Data is Windows.ApplicationModel.Activation.ShareTargetActivatedEventArgs share)
+        {
+            _window = new Share.ShareWindow(share.ShareOperation);
+            _window.Closed += (_, _) => Exit();
+            _window.Activate();
+            return;
+        }
+
         var location = LibraryLocation.Default();
 
         // A restore scheduled by the last run finishes now, before the store opens.
@@ -77,9 +92,18 @@ public partial class App : Application
         }
 
         Services = new AppServices(location, store);
-        _window = new MainWindow(Services, outcome);
-        _window.Closed += (_, _) => Services?.Dispose();
+        var main = new MainWindow(Services, outcome);
+        _window = main;
+        Inbox = new Share.ShareInbox(Services, main.DispatcherQueue);
+        Inbox.Reported += async (_, report) => await main.ShowReport(report);
+        _window.Closed += (_, _) =>
+        {
+            Inbox?.Dispose();
+            Services?.Dispose();
+        };
         _window.Activate();
+        // Shared items waiting from while BenchBook was closed are added now.
+        Inbox.Start();
 
         // Leftovers from interrupted work are removed at launch, as on the Mac.
         _ = Services.WithStoreAsync(s => LibraryMaintenance.CleanUp(s, location));

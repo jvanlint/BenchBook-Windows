@@ -7,6 +7,7 @@ namespace BenchBook.Core;
 /// &lt;app folder&gt;\Library\Originals\    the user's files, byte-for-byte
 /// &lt;app folder&gt;\Library\Posters\      video posters and webpage previews
 /// &lt;app folder&gt;\Library\Thumbnails\   made from originals; can be deleted
+/// &lt;app folder&gt;\Inbox\                captures from the share window, until they're imported
 /// </code>
 /// The app uses %LOCALAPPDATA%\BenchBook. Tests use a temporary folder.
 /// </summary>
@@ -29,6 +30,12 @@ public sealed class LibraryLocation
     public string PostersFolder => Path.Combine(LibraryRoot, "Posters");
     public string ThumbnailsFolder => Path.Combine(LibraryRoot, "Thumbnails");
     public string SettingsPath => Path.Combine(AppFolder, "Settings.json");
+
+    /// <summary>Captures from the share window wait here until the app imports them.</summary>
+    public string InboxFolder => Path.Combine(AppFolder, "Inbox");
+
+    /// <summary>The projects the share window lists, kept up to date by the app.</summary>
+    public string ShareProjectsPath => Path.Combine(InboxFolder, "Projects.json");
 
     /// <summary>The store and the files SQLite keeps beside it.</summary>
     public IEnumerable<string> StoreFiles => [StorePath, StorePath + "-wal", StorePath + "-shm"];

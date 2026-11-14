@@ -102,6 +102,12 @@ tests\BenchBook.Pdf.Tests\  PDF tests, on PDFs made with PDFium itself
   from the record properties (`Store\TableMap.cs`). Schema changes are new
   numbered steps in `Store\Migrations.cs`; never edit a released step.
 - The app icons in `Assets\` are placeholders.
+- Sharing: choosing BenchBook in the Windows share sheet starts a second
+  process that shows only `Share\ShareWindow`. It never opens the store or
+  finishes a restore. It reads `Inbox\Projects.json` (published by the running
+  app) and commits an envelope folder to `%LOCALAPPDATA%\BenchBook\Inbox\`, as
+  the Mac's `CaptureEnvelope` does. The running app (`Share\ShareInbox`) imports
+  envelopes at launch and as they arrive.
 
 ## Working rules
 

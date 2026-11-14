@@ -68,6 +68,8 @@ public sealed partial class MainWindow : Window
                 UpdateShoppingCount();
             }
             _services.SetMainWindowActive(active);
+            // A share that arrived while the inbox couldn't be watched is picked up here.
+            if (active) App.Inbox?.Import();
         };
         services.ShowProject = ShowProject;
 
@@ -632,6 +634,8 @@ public sealed partial class MainWindow : Window
         {
             case Project project:
                 ContentFrame.Navigate(typeof(ProjectPage), new ProjectPageArgs(_services, project, EditProject, DeleteProject), new SuppressNavigationTransitionInfo());
+                // The share window starts with the project last open here.
+                App.Inbox?.PublishProjects(project.Id);
                 break;
             case "paints":
                 ContentFrame.Content = new PaintsPage(_services, _paintToShow);
@@ -749,6 +753,20 @@ public sealed partial class MainWindow : Window
                 dialog.Content = Wrapped(failed.Message);
                 await dialog.ShowAsync();
                 break;
+        }
+    }
+
+    /// <summary>Says what couldn't be added from a share, or was already saved.</summary>
+    public async Task ShowReport(BenchBook.Core.Capture.CaptureReport report)
+    {
+        try
+        {
+            await ShowMessage(report.Title, report.Message);
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            // Another dialog is open, and only one can show at a time. The items that
+            // could be added are saved either way.
         }
     }
 

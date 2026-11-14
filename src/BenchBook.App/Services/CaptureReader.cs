@@ -24,7 +24,7 @@ internal static class CaptureReader
         var temporary = Path.Combine(Path.GetTempPath(), "BenchBook Capture", Guid.NewGuid().ToString("N"));
         try
         {
-            var (items, skipped) = await Read(data, temporary);
+            var (items, skipped) = await Read(data, temporary, share: false);
             if (items.Count == 0 && skipped.Count == 0) return null;
             return await ImportAsync(services, items, skipped, projectId);
         }
@@ -48,7 +48,15 @@ internal static class CaptureReader
         return ReferenceImporter.Report(outcomes, skipped);
     }
 
-    private static async Task<(List<CapturedItem> Items, List<string> Skipped)> Read(DataPackageView data, string temporary)
+    /// <summary>
+    /// Reads what's being shared, copying every file into <paramref name="folder"/>
+    /// under a new name, since a shared file may vanish when sharing ends. Files
+    /// BenchBook can't save are skipped, so the share window can say so.
+    /// </summary>
+    public static Task<(List<CapturedItem> Items, List<string> Skipped)> ReadForShare(DataPackageView data, string folder) =>
+        Read(data, folder, share: true);
+
+    private static async Task<(List<CapturedItem> Items, List<string> Skipped)> Read(DataPackageView data, string temporary, bool share)
     {
         var items = new List<CapturedItem>();
         var skipped = new List<string>();
@@ -59,12 +67,24 @@ internal static class CaptureReader
                 if (item is StorageFile file)
                 {
                     var path = file.Path;
-                    if (string.IsNullOrEmpty(path))
+                    if (share && !string.IsNullOrEmpty(path) && !FileInspector.LooksSaveable(path, file.Name))
                     {
-                        // A file with no path on disk, e.g. from a browser: copy it out first.
+                        skipped.Add(file.Name);
+                        continue;
+                    }
+                    if (share || string.IsNullOrEmpty(path))
+                    {
+                        // A file with no path on disk, e.g. from a browser, is copied out first.
                         Directory.CreateDirectory(temporary);
-                        var copy = await file.CopyAsync(await StorageFolder.GetFolderFromPathAsync(temporary), file.Name, NameCollisionOption.GenerateUniqueName);
+                        var name = share ? Guid.NewGuid().ToString("N") + Path.GetExtension(file.Name) : file.Name;
+                        var copy = await file.CopyAsync(await StorageFolder.GetFolderFromPathAsync(temporary), name, NameCollisionOption.GenerateUniqueName);
                         path = copy.Path;
+                        if (share && !FileInspector.LooksSaveable(path, file.Name))
+                        {
+                            File.Delete(path);
+                            skipped.Add(file.Name);
+                            continue;
+                        }
                     }
                     items.Add(new CapturedItem.File(path, file.Name));
                 }
@@ -77,11 +97,23 @@ internal static class CaptureReader
         else if (data.Contains(StandardDataFormats.WebLink))
         {
             var link = await data.GetWebLinkAsync();
-            string? title = null;
+            var pageTitle = string.IsNullOrWhiteSpace(data.Properties.Title) ? null : data.Properties.Title.Trim();
+            var title = pageTitle;
             if (data.Contains(StandardDataFormats.Text))
             {
                 var text = (await data.GetTextAsync()).Trim();
-                if (text.Length > 0 && text != link.OriginalString && text.Length <= 300 && !text.Contains('\n')) title = text;
+                if (text.Length > 0 && text != link.OriginalString && text != pageTitle)
+                {
+                    // Text that isn't the page's title is a snippet from the page, with the page
+                    // as its source, as on the Mac (ItemProviderReader.swift). When the title
+                    // isn't given separately, one short line is taken to be the title.
+                    if (pageTitle is null && text.Length <= 300 && !text.Contains('\n')) title = text;
+                    else
+                    {
+                        items.Add(new CapturedItem.Text(text, link.AbsoluteUri, pageTitle));
+                        return (items, skipped);
+                    }
+                }
             }
             items.Add(new CapturedItem.Link(link.AbsoluteUri, title));
         }
@@ -89,7 +121,8 @@ internal static class CaptureReader
         {
             // A picture with no file is saved as PNG.
             Directory.CreateDirectory(temporary);
-            var name = $"Pasted Image {DateTime.Now:yyyy-MM-dd HH.mm.ss}.png";
+            var shown = $"{(share ? "Shared" : "Pasted")} Image {DateTime.Now:yyyy-MM-dd HH.mm.ss}.png";
+            var name = share ? Guid.NewGuid().ToString("N") + ".png" : shown;
             var reference = await data.GetBitmapAsync();
             var folder = await StorageFolder.GetFolderFromPathAsync(temporary);
             var target = await folder.CreateFileAsync(name);
@@ -102,7 +135,7 @@ internal static class CaptureReader
                 encoder.SetSoftwareBitmap(bitmap);
                 await encoder.FlushAsync();
             }
-            items.Add(new CapturedItem.File(Path.Combine(temporary, name), name));
+            items.Add(new CapturedItem.File(Path.Combine(temporary, name), shown));
         }
         else if (data.Contains(StandardDataFormats.Text))
         {
