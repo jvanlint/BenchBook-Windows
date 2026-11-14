@@ -44,6 +44,7 @@ public class SearchTests
         Assert.Equal(sample.References[1].Id, hit.Entry.Reference.Id);
         var match = Assert.Single(hit.Matches);
         Assert.Equal(("Highlight 1", "Check this"), (match.Label, match.Text));
+        Assert.Equal(sample.Markups[0].Id, match.MarkupId); // So the result can open the PDF at it.
         Assert.Empty(results.Projects);
     }
 

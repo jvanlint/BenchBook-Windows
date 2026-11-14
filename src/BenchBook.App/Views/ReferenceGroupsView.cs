@@ -15,7 +15,8 @@ namespace BenchBook.App.Views;
 
 /// <summary>One part of a reference that matched a search, e.g. "Box 2: …discolouration…".</summary>
 /// <param name="MomentSeconds">For a video moment, its time: clicking the line opens the video there.</param>
-public sealed record MatchLine(string Label, string Excerpt, IReadOnlyList<(int Start, int Length)> Bold, double? MomentSeconds = null);
+/// <param name="MarkupId">For an image box or PDF markup: clicking the line opens the viewer at it.</param>
+public sealed record MatchLine(string Label, string Excerpt, IReadOnlyList<(int Start, int Length)> Bold, double? MomentSeconds = null, string? MarkupId = null);
 
 /// <summary>A reference in a list of results, with what matched.</summary>
 public sealed record ResultRow(ReferenceEntry Entry, IReadOnlyList<MatchLine> Matches);
@@ -142,10 +143,24 @@ internal sealed class ReferenceGroupsView : UserControl
         return grid;
     }
 
-    /// <summary>A matched line. A video moment's line is a link that opens the video at that time.</summary>
-    private static FrameworkElement MatchView(MatchLine match, ReferenceEntry entry)
+    /// <summary>
+    /// A matched line. A video moment's line opens the video at that time; an
+    /// image box's or PDF markup's line opens the viewer at it.
+    /// </summary>
+    private FrameworkElement MatchView(MatchLine match, ReferenceEntry entry)
     {
         var block = MatchText(match);
+        if (match.MarkupId is { } markupId && entry.Reference.Kind is ReferenceKind.Image or ReferenceKind.Pdf)
+        {
+            var open = new HyperlinkButton { Content = block, Padding = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Left };
+            ToolTipService.SetToolTip(open, $"Open at {match.Label}");
+            open.Click += (_, _) =>
+            {
+                if (entry.Reference.Kind == ReferenceKind.Image) Viewers.ImageViewerWindow.Show(Services, entry, markupId);
+                else Viewers.PdfViewerWindow.Show(Services, entry, markupId);
+            };
+            return open;
+        }
         if (match.MomentSeconds is not { } seconds || entry.Reference.SourcePageUrl is not { } source) return block;
         var button = new HyperlinkButton { Content = block, Padding = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Left };
         ToolTipService.SetToolTip(button, $"Open the video at {VideoLink.Format(seconds)}");

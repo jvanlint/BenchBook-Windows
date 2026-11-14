@@ -57,7 +57,8 @@ public sealed class SearchQuery
 
 /// <summary>Where in a reference a search matched, e.g. "Box 2" or "Description".</summary>
 /// <param name="MomentSeconds">For a video moment, its time, so the result can open the video there.</param>
-public sealed record SearchMatch(string Label, string Text, bool IsTitle, bool ShownAsLine, double? MomentSeconds = null);
+/// <param name="MarkupId">For an image box or PDF markup, its id, so the result can open the viewer at it.</param>
+public sealed record SearchMatch(string Label, string Text, bool IsTitle, bool ShownAsLine, double? MomentSeconds = null, string? MarkupId = null);
 
 public sealed record ReferenceHit(ReferenceEntry Entry, IReadOnlyList<SearchMatch> Matches);
 
@@ -138,10 +139,10 @@ public sealed class LibrarySearch
         var reference = entry.Reference;
         var title = ReferenceText.FallbackTitle(entry);
         var parts = new List<Part>();
-        void Add(string label, string? text, bool isTitle = false, bool line = true, double? moment = null)
+        void Add(string label, string? text, bool isTitle = false, bool line = true, double? moment = null, string? markup = null)
         {
             var trimmed = text?.Trim();
-            if (!string.IsNullOrEmpty(trimmed)) parts.Add(new Part(new SearchMatch(label, trimmed, isTitle, line, moment), SearchField.Of(trimmed)));
+            if (!string.IsNullOrEmpty(trimmed)) parts.Add(new Part(new SearchMatch(label, trimmed, isTitle, line, moment, markup), SearchField.Of(trimmed)));
         }
         Add("Title", title, isTitle: true, line: false);
         Add("Type", ReferenceText.KindName(reference.Kind), line: false);
@@ -156,13 +157,13 @@ public sealed class LibrarySearch
         if (reference.Kind == ReferenceKind.Image)
         {
             var number = 0;
-            foreach (var note in markups.OrderBy(m => m.CreatedAt)) Add($"Box {++number}", note.Text);
+            foreach (var note in markups.OrderBy(m => m.CreatedAt)) Add($"Box {++number}", note.Text, markup: note.Id);
         }
         else
         {
             var number = 0;
             foreach (var markup in markups.OrderBy(m => m.PageIndex).ThenBy(m => m.CreatedAt))
-                Add($"{MarkupKindName(markup.Kind)} {++number}", markup.Text);
+                Add($"{MarkupKindName(markup.Kind)} {++number}", markup.Text, markup: markup.Id);
         }
         foreach (var moment in entry.Moments)
             Add(VideoLink.Format(moment.OffsetSeconds), string.Join(" — ", new[] { moment.Title, moment.Note }.Where(t => t is not null)), moment: moment.OffsetSeconds);

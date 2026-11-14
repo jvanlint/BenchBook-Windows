@@ -46,6 +46,7 @@ public sealed partial class ReferencesView : UserControl
 
         // Tiles handle their own presses, so listen for handled ones too.
         Gallery.AddHandler(PointerPressedEvent, new PointerEventHandler(Gallery_PointerPressed), handledEventsToo: true);
+        Gallery.SelectionChanged += Gallery_SelectionChanged;
         Gallery.AddHandler(PointerMovedEvent, new PointerEventHandler(Gallery_PointerMoved), handledEventsToo: true);
         Gallery.AddHandler(PointerReleasedEvent, new PointerEventHandler(Gallery_PointerReleased), handledEventsToo: true);
         Gallery.AddHandler(PointerCaptureLostEvent, new PointerEventHandler(Gallery_PointerCaptureLost), handledEventsToo: true);
@@ -546,8 +547,33 @@ public sealed partial class ReferencesView : UserControl
         _openFallback = null;
         if (_openOnRelease is not { } tile) return;
         _openOnRelease = null;
+
+        // The double-click's first click selected just this tile. If it was one of several
+        // selected a moment ago, open those together, and put the selection back.
+        if (_earlierSelection is { } earlier && earlier.Contains(tile) && DateTime.UtcNow - _earlierSelectionLost < TimeSpan.FromSeconds(1.5))
+        {
+            Gallery.SelectedItems.Clear();
+            foreach (var other in earlier.Where(_tiles.Contains)) Gallery.SelectedItems.Add(other);
+        }
+        _earlierSelection = null;
         // After the gallery has finished handling the release, including focusing the tile.
         DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, async () => await OpenAsync(tile));
+    }
+
+    private List<ReferenceTile> _selectionNow = [];
+    private List<ReferenceTile>? _earlierSelection;
+    private DateTime _earlierSelectionLost;
+
+    /// <summary>Remembers a selection of several tiles when a plain click narrows it to one, for a double-click that follows.</summary>
+    private void Gallery_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        var now = Selection;
+        if (_selectionNow.Count > 1 && now.Count == 1 && _selectionNow.Contains(now[0]))
+        {
+            _earlierSelection = _selectionNow;
+            _earlierSelectionLost = DateTime.UtcNow;
+        }
+        _selectionNow = now;
     }
 
     private async void Gallery_KeyDown(object sender, KeyRoutedEventArgs e)

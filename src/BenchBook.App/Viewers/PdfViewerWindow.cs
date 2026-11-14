@@ -25,10 +25,28 @@ internal sealed partial class PdfViewerWindow : Window
 {
     private static readonly Dictionary<string, PdfViewerWindow> Open = new(Ids.Comparer);
 
-    public static void Show(AppServices services, ReferenceEntry entry)
+    /// <summary>Shows the PDF, in the window already showing it if there is one, optionally at one of its markups.</summary>
+    public static void Show(AppServices services, ReferenceEntry entry, string? markupId = null)
     {
-        if (Open.TryGetValue(entry.Reference.Id, out var existing)) { WindowFrames.Present(existing); return; }
-        WindowFrames.Present(new PdfViewerWindow(services, entry));
+        if (Open.TryGetValue(entry.Reference.Id, out var existing))
+        {
+            WindowFrames.Present(existing);
+            if (markupId is not null) existing.FocusMarkup(markupId);
+            return;
+        }
+        WindowFrames.Present(new PdfViewerWindow(services, entry) { _focusAfterLoad = markupId });
+    }
+
+    private string? _focusAfterLoad;
+
+    /// <summary>Selects a markup and scrolls its page so the markup is in view.</summary>
+    private void FocusMarkup(string markupId)
+    {
+        if (_pages.Count == 0 || _markups.FirstOrDefault(m => m.Id == markupId) is not { } markup) { _focusAfterLoad = markupId; return; }
+        _showMarkups.IsChecked = true;
+        Select(markupId);
+        ScrollToPage(markup.PageIndex, MarkupGeometry.RectOf(markup));
+        if (_fields.TryGetValue(markupId, out var field)) field.StartBringIntoView();
     }
 
     /// <summary>Page points to layout units at 100%: a point is 1/72 inch, a unit 1/96.</summary>
@@ -340,6 +358,13 @@ internal sealed partial class PdfViewerWindow : Window
         await Task.Yield();
         Fit();
         _ = RenderThumbnails();
+        if (_focusAfterLoad is { } markupId)
+        {
+            _focusAfterLoad = null;
+            // After Fit's zoom has taken effect and the pages are laid out: a scroll
+            // set before then is measured at the old zoom and lands in the wrong place.
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => FocusMarkup(markupId));
+        }
     }
 
     /// <summary>

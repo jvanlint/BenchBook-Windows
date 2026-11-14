@@ -23,15 +23,36 @@ internal sealed partial class ImageViewerWindow : Window
 {
     private static readonly Dictionary<string, ImageViewerWindow> Open = new(Ids.Comparer);
 
-    /// <summary>Shows the image, in the window already showing it if there is one.</summary>
-    public static void Show(AppServices services, ReferenceEntry entry)
+    /// <summary>Shows the image, in the window already showing it if there is one, optionally zoomed to one of its notes.</summary>
+    public static void Show(AppServices services, ReferenceEntry entry, string? noteId = null)
     {
         if (Open.TryGetValue(entry.Reference.Id, out var existing))
         {
             WindowFrames.Present(existing);
+            if (noteId is not null) existing.FocusNote(noteId);
             return;
         }
-        WindowFrames.Present(new ImageViewerWindow(services, entry));
+        var window = new ImageViewerWindow(services, entry) { _focusAfterLoad = noteId };
+        WindowFrames.Present(window);
+    }
+
+    private string? _focusAfterLoad;
+
+    /// <summary>Selects a note and zooms to its box, with some of the picture around it.</summary>
+    private void FocusNote(string noteId)
+    {
+        if (!_loaded || _notes.FirstOrDefault(n => n.Id == noteId) is not { } note) { _focusAfterLoad = noteId; return; }
+        _showBoxes.IsChecked = true;
+        Select(noteId);
+        _fitOnResize = false;
+        var rect = NoteGeometry.ToPixels(note, _imageWidth, _imageHeight);
+        var zoom = (float)Math.Clamp(
+            Math.Min(_scroller.ViewportWidth / (rect.Width * _layout * 2.5), _scroller.ViewportHeight / (rect.Height * _layout * 2.5)),
+            _scroller.MinZoomFactor, Math.Min(_scroller.MaxZoomFactor, ActualZoom * 4));
+        // The box's centre, in the surface's unzoomed units, goes to the middle of the view.
+        ZoomTo(zoom, (rect.X + rect.Width / 2) * _layout, (rect.Y + rect.Height / 2) * _layout, _scroller.ViewportWidth / 2, _scroller.ViewportHeight / 2);
+        _panelTabs.SelectedItem = _notesTab;
+        if (_noteFields.TryGetValue(noteId, out var field)) field.StartBringIntoView();
     }
 
     private readonly AppServices _services;
@@ -314,6 +335,12 @@ internal sealed partial class ImageViewerWindow : Window
         {
             await Task.Yield();
             if (_services.Settings.OpenImagesAtActualSize) ActualSize(); else Fit();
+            if (_focusAfterLoad is { } note)
+            {
+                _focusAfterLoad = null;
+                await Task.Yield();
+                FocusNote(note);
+            }
         }
     }
 
@@ -384,7 +411,19 @@ internal sealed partial class ImageViewerWindow : Window
         // Keep the middle of the view where it is.
         var centreX = (_scroller.HorizontalOffset + _scroller.ViewportWidth / 2) / _scroller.ZoomFactor;
         var centreY = (_scroller.VerticalOffset + _scroller.ViewportHeight / 2) / _scroller.ZoomFactor;
-        _scroller.ChangeView(centreX * zoom - _scroller.ViewportWidth / 2, centreY * zoom - _scroller.ViewportHeight / 2, zoom, disableAnimation: true);
+        ZoomTo(zoom, centreX, centreY, _scroller.ViewportWidth / 2, _scroller.ViewportHeight / 2);
+    }
+
+    /// <summary>
+    /// Zooms, then puts a point of the content (in unzoomed units) at a place in the
+    /// view. The zoom is applied first: an offset set together with a new zoom is
+    /// limited to what the old zoom could scroll to, which lands in the wrong place.
+    /// </summary>
+    private void ZoomTo(float zoom, double contentX, double contentY, double viewX, double viewY)
+    {
+        _scroller.ChangeView(null, null, zoom, disableAnimation: true);
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+            _scroller.ChangeView(Math.Max(0, contentX * zoom - viewX), Math.Max(0, contentY * zoom - viewY), null, disableAnimation: true));
     }
 
     /// <summary>Zooms by a factor, keeping the point under the pointer where it is.</summary>
@@ -394,7 +433,7 @@ internal sealed partial class ImageViewerWindow : Window
         var zoom = (float)Math.Clamp(_scroller.ZoomFactor * factor, _scroller.MinZoomFactor, _scroller.MaxZoomFactor);
         var contentX = (_scroller.HorizontalOffset + pointer.X) / _scroller.ZoomFactor;
         var contentY = (_scroller.VerticalOffset + pointer.Y) / _scroller.ZoomFactor;
-        _scroller.ChangeView(contentX * zoom - pointer.X, contentY * zoom - pointer.Y, zoom, disableAnimation: true);
+        ZoomTo(zoom, contentX, contentY, pointer.X, pointer.Y);
     }
 
     private void UpdateZoomText()

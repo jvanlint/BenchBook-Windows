@@ -104,7 +104,7 @@ internal sealed partial class SearchPage : Page
             hit.Matches.Where(m => m.ShownAsLine).Select(m =>
             {
                 var (excerpt, bold) = SearchSnippet.Excerpt(m.Text, query);
-                return new MatchLine(m.Label, excerpt, bold, m.MomentSeconds);
+                return new MatchLine(m.Label, excerpt, bold, m.MomentSeconds, m.MarkupId);
             }).ToList())).ToList());
     }
 
