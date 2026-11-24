@@ -194,6 +194,9 @@ would need a paid OV certificate with cloud signing.
 - Versions follow the Mac's: decided with the user on 2026-11-25, starting
   with 1.3.0, which matches Mac 1.3.0 (0.x releases came before).
 - Day-to-day builds stay MSIX (`Package.appxmanifest`, development package).
+- `.github\workflows\build.yml` checks every push to any branch (not
+  `.md`-only ones): both test projects, then the packaged app for x64 and
+  Arm64. It's read-only and makes nothing to download.
 
 ## Working rules
 

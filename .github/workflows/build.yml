@@ -1,0 +1,69 @@
+# Checks every push: the tests run, and the app builds for x64 and Arm64.
+#
+# - Push to any branch: a tick or a cross shows next to the commit on GitHub,
+#   and GitHub emails you if it fails.
+# - Run it by hand: Actions > Build > Run workflow.
+#
+# It builds the app as you do day to day (packaged, as MSIX), so manifest and
+# XAML mistakes show up here. The release zips are built by release.yml.
+name: Build
+
+on:
+  push:
+    branches: ["**"]
+    paths-ignore: ["**.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A newer push to the same branch replaces a run that's still going.
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v7.0.1
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Run the Core tests
+        run: dotnet test --project tests/BenchBook.Core.Tests -c Release
+
+      - name: Run the PDF tests
+        run: dotnet test --project tests/BenchBook.Pdf.Tests -c Release
+
+  app:
+    name: App (${{ matrix.platform }})
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [x64, ARM64]
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v7.0.1
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build the app
+        run: dotnet build src/BenchBook.App -c Release -p:Platform=${{ matrix.platform }}
