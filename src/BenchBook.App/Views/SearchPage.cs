@@ -76,6 +76,7 @@ internal sealed partial class SearchPage : Page
         if (results.Projects.Count > 0)
         {
             var list = Section("Projects");
+            var kits = Words.KitsByProject(_services);
             foreach (var project in results.Projects)
             {
                 var button = new HyperlinkButton { Content = project.Name, Padding = new Thickness(0, 2, 0, 2) };
@@ -83,15 +84,20 @@ internal sealed partial class SearchPage : Page
                 button.Click += (_, _) => _services.ShowProject?.Invoke(id);
                 var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
                 row.Children.Add(button);
-                row.Children.Add(Secondary(Words.ProjectSummary(project)));
+                row.Children.Add(Secondary(Words.ProjectSummary(project, kits[project.Id].ToList())));
                 list.Children.Add(row);
             }
+        }
+        if (results.Kits.Count > 0)
+        {
+            var list = Section("Kits");
+            foreach (var kit in results.Kits) list.Children.Add(KitRow(kit));
         }
         if (results.Paints.Count > 0)
         {
             var list = Section("Paints");
             foreach (var paint in results.Paints)
-                list.Children.Add(new TextBlock { Text = $"{paint.Brand} {paint.Code} {paint.Name}".Trim() + (paint.StandardCode.Length > 0 ? $" · {paint.StandardCode}" : "") });
+                list.Children.Add(new TextBlock { Text = $"{paint.Brand} {paint.Code} {paint.Name}".Trim() + (paint.Standard is { } standard ? $" · {standard.DisplayText}" : "") });
         }
         if (results.AftermarketItems.Count > 0)
         {
@@ -106,6 +112,32 @@ internal sealed partial class SearchPage : Page
                 var (excerpt, bold) = SearchSnippet.Excerpt(m.Text, query);
                 return new MatchLine(m.Label, excerpt, bold, m.MomentSeconds, m.MarkupId);
             }).ToList())).ToList());
+    }
+
+    /// <summary>Box art, brand and name, scale, number and notes, and its status or "Not Owned".</summary>
+    private Grid KitRow(BenchBook.Core.Model.Kit kit)
+    {
+        var row = new Grid { ColumnSpacing = 10, Padding = new Thickness(0, 2, 0, 2), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
+        TableRows.Columns(row, "40", "1*");
+        TableRows.Cell(row, KitViews.Picture(_services, kit.PictureAssetId, 36), 0);
+        var details = string.Join(" · ", new[] { kit.Scale, kit.Number, BenchBook.Core.Kits.KitText.StatusOrNotOwned(kit) }.Where(t => !string.IsNullOrWhiteSpace(t)));
+        var text = TableRows.TwoLines($"{kit.Brand} {kit.Name}", details);
+        if (kit.Notes is { } notes) text.Children.Add(Secondary(notes));
+        TableRows.Cell(row, text, 1);
+
+        var menu = new MenuFlyout();
+        var edit = new MenuFlyoutItem { Text = "Edit Kit…", Icon = new SymbolIcon(Symbol.Edit) };
+        edit.Click += async (_, _) =>
+        {
+            if (await KitViews.Edit(XamlRoot, _services, kit) is not null) _services.NotifyLibraryChanged();
+        };
+        menu.Items.Add(edit);
+        var show = new MenuFlyoutItem { Text = "Show in Kits" };
+        show.Click += (_, _) => _services.ShowKit?.Invoke(kit.Id);
+        menu.Items.Add(show);
+        row.ContextFlyout = menu;
+        row.DoubleTapped += (_, _) => _services.ShowKit?.Invoke(kit.Id);
+        return row;
     }
 
     private StackPanel Section(string title)

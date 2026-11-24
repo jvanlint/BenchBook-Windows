@@ -14,6 +14,15 @@ public static class PaintIdentity
     public static string Key(string brand, string range, string code) =>
         $"{Words(brand)}|{Words(range)}|{CompactCode(code)}";
 
+    /// <summary>
+    /// A mix is known by brand and name, as its code is optional: "Custom",
+    /// "Faded Sky Grey" gives "mix|custom|faded sky grey" (behaviour.md, "Paint identity").
+    /// </summary>
+    public static string MixKey(string brand, string name) => $"mix|{Words(brand)}|{Words(name)}";
+
+    /// <summary>The code folded as in the key, so "AK 480" and "AK480" are the same.</summary>
+    public static string FoldCode(string code) => CompactCode(code);
+
     /// <summary>" Tamiya  Acrylic" gives "tamiya acrylic".</summary>
     public static string Words(string text) => TagNames.CollapseWhitespace(text).ToLowerInvariant();
 
@@ -22,18 +31,21 @@ public static class PaintIdentity
 
     /// <summary>
     /// A paint matches when brand, range, code, name or standard contains the
-    /// query, ignoring case. A standard also matches with everything but letters
-    /// and digits removed from both, so "FS 36270" finds "FS-36270 / BS 637".
+    /// query, ignoring case. The standard is its shown text and its system's
+    /// name, e.g. "FS 36270 FS 595", so "FS 595" finds every FS paint. A standard
+    /// also matches with everything but letters and digits removed from both, so
+    /// "FS 36270" finds "FS36270" and "FS-36270 / BS 637".
     /// </summary>
     public static bool Matches(string query, Paint paint)
     {
         query = query.Trim();
         if (query.Length == 0) return true;
-        if (new[] { paint.Brand, paint.Range, paint.Code, paint.Name, paint.StandardCode }
+        var standard = paint.Standard?.SearchText ?? "";
+        if (new[] { paint.Brand, paint.Range, paint.Code, paint.Name, standard }
             .Any(f => CultureInfo.CurrentCulture.CompareInfo.IndexOf(f, query, CompareOptions.IgnoreCase) >= 0))
             return true;
         var folded = LettersAndDigits(query);
-        return folded.Length > 0 && LettersAndDigits(paint.StandardCode).Contains(folded, StringComparison.Ordinal);
+        return folded.Length > 0 && LettersAndDigits(standard).Contains(folded, StringComparison.Ordinal);
     }
 
     private static string LettersAndDigits(string text) => string.Concat(text.ToLowerInvariant().Where(char.IsLetterOrDigit));
@@ -93,7 +105,7 @@ public static class PaintText
 
     /// <summary>Range and colour standard, e.g. "Acrylic XF · FS 36270".</summary>
     public static string SecondaryLine(Paint paint) =>
-        string.Join(" · ", new[] { paint.Range, paint.StandardCode }.Where(s => s.Length > 0));
+        string.Join(" · ", new[] { paint.Range, paint.Standard?.DisplayText ?? "" }.Where(s => s.Length > 0));
 
     /// <summary>"a", "a and b", or "a, b and c".</summary>
     public static string List(IReadOnlyList<string> items) =>

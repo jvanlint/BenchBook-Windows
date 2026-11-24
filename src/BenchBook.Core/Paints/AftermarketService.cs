@@ -77,8 +77,8 @@ public sealed record AftermarketDraft
 
     public bool HasValidUrl => ProductUrl.Trim().Length == 0 || ParsedUrl is not null;
 
-    /// <summary>A new part for a project, starting with the project's scale.</summary>
-    public static AftermarketDraft For(Project project) => new() { ScaleCompatibility = project.Scale };
+    /// <summary>A new part for a project. It starts empty: a project's scale is now its kits'.</summary>
+    public static AftermarketDraft For(Project project) => new();
 
     public static AftermarketDraft From(AftermarketItem item) => new()
     {

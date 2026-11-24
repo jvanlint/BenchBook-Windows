@@ -13,16 +13,14 @@ public class ProjectTests
         using var store = library.OpenStore();
         var project = ProjectService.Create(store, new ProjectDraft
         {
-            Name = "  Spitfire Mk IX ", Manufacturer = " Eduard", Scale = "1:48 ", KitNumber = "   ",
+            Name = "  Spitfire Mk IX ", Subject = " Mk IXc ", MarkingsScheme = "   ",
             Notes = "\n  Weathering: light.\n", Status = ProjectStatus.Paused,
         });
 
         var stored = store.Project(project.Id)!;
         Assert.Equal("Spitfire Mk IX", stored.Name);
-        Assert.Equal("Eduard", stored.Manufacturer);
-        Assert.Equal("", stored.Subject);
-        Assert.Equal("1:48", stored.Scale);
-        Assert.Null(stored.KitNumber);
+        Assert.Equal("Mk IXc", stored.Subject);
+        Assert.Null(stored.MarkingsScheme);
         Assert.Equal("Weathering: light.", stored.Notes);
         Assert.Equal(ProjectStatus.Paused, stored.Status);
         Assert.Equal(stored.CreatedAt, stored.UpdatedAt);
@@ -63,7 +61,7 @@ public class ProjectTests
     {
         var draft = ProjectDraft.From(new Project
         {
-            Id = Ids.New(), CreatedAt = Sample.Date, UpdatedAt = Sample.Date, Name = "Old", Manufacturer = "", Subject = "", Scale = "",
+            Id = Ids.New(), CreatedAt = Sample.Date, UpdatedAt = Sample.Date, Name = "Old", Subject = "",
         });
         Assert.Equal(ProjectStatus.Researching, draft.Status);
     }
@@ -91,10 +89,16 @@ public class ProjectTests
         Assert.Null(store.Project(sample.Projects[0].Id));
         var after = store.ReadSnapshot();
         Assert.Single(after.References);
-        Assert.Equal(pdf.AssetId, Assert.Single(after.Assets).Id);
-        Assert.Single(after.Paints);
+        // The PDF another project uses stays, and so does the box art of the kit, which stays in the catalogue.
+        var boxArt = sample.Kits[0].PictureAssetId!;
+        Assert.Equal(new[] { pdf.AssetId!, boxArt }.Order(), after.Assets.Select(a => a.Id).Order());
+        Assert.Equal(sample.Paints.Count, after.Paints.Count);
         Assert.Single(after.OwnedPaints);
         Assert.Single(after.Tags);
+        Assert.Empty(after.BuildPhotos);
+        Assert.Equal(2, after.Kits.Count);
+        Assert.All(after.Kits, k => Assert.Null(k.ProjectId));
+        Assert.False(File.Exists(location.FullPath(sample.Assets.Single(a => a.Id == sample.BuildPhotos[0].AssetId).OriginalRelativePath)));
 
         Assert.False(File.Exists(location.FullPath(sample.Assets[0].OriginalRelativePath)));
         Assert.False(File.Exists(location.ThumbnailPath(sample.Assets[0].Id)));
@@ -110,9 +114,9 @@ public class ProjectTests
         var sample = Sample.Install(library);
         using var store = library.OpenStore();
         var contents = store.ProjectContents(sample.Projects[0].Id);
-        Assert.Equal(new ProjectContents(4, 1, 1, 2, 1), contents);
+        Assert.Equal(new ProjectContents(4, 1, 1, 3, 1, 1), contents);
         Assert.Equal(
-            "Its 4 references, 1 image note, 1 PDF markup, 2 paints from its paint list and 1 aftermarket part will be deleted. Paints in your catalogue and your tags are kept. This can't be undone.",
+            "Its 4 references, 1 image note, 1 PDF markup, 3 paints from its paint list, 1 aftermarket part and 1 build photo will be deleted. Paints in your catalogue and your tags are kept. This can't be undone.",
             ProjectService.DeletionMessage(contents));
         Assert.Equal(
             "Its 12 references and 2 aftermarket parts will be deleted. Paints in your catalogue and your tags are kept. This can't be undone.",

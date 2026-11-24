@@ -48,8 +48,8 @@ public static class Sample
         var project = new Project
         {
             Id = Ids.New(), CreatedAt = Date, UpdatedAt = Date,
-            Name = "F-16CJ 50th Anniversary", Manufacturer = "Tamiya", Subject = "F-16CJ Block 50", Scale = "1:48",
-            KitNumber = "61098", Status = ProjectStatus.InProgress, Notes = "Wheel wells first.\n  Then the cockpit.",
+            Name = "F-16CJ 50th Anniversary", Subject = "F-16CJ Block 50",
+            Status = ProjectStatus.InProgress, Notes = "Wheel wells first.\n  Then the cockpit.",
         };
         var image = new Asset
         {
@@ -70,6 +70,24 @@ public static class Sample
             Sha256 = image.Sha256, PixelWidth = 10, PixelHeight = 10, OriginalRelativePath = "",
         };
         partPicture.OriginalRelativePath = $"Originals/{partPicture.Id}.jpg";
+        var boxArt = new Asset
+        {
+            Id = Ids.New(), CreatedAt = Date, UpdatedAt = Date, MimeType = "image/png", ByteCount = PosterBytes.Length,
+            Sha256 = Hash(PosterBytes), PixelWidth = 600, PixelHeight = 400, OriginalRelativePath = "",
+        };
+        boxArt.OriginalRelativePath = $"Originals/{boxArt.Id}.png";
+        var photoFile = new Asset
+        {
+            Id = Ids.New(), CreatedAt = Date, UpdatedAt = Date, MimeType = "image/jpeg", ByteCount = JpegBytes.Length,
+            Sha256 = image.Sha256, PixelWidth = 4032, PixelHeight = 3024, OriginalFilename = "IMG_0042.jpg", OriginalRelativePath = "",
+        };
+        photoFile.OriginalRelativePath = $"Originals/{photoFile.Id}.jpg";
+        var photo = new BuildPhoto
+        {
+            Id = Ids.New(), CreatedAt = Date, UpdatedAt = Date, ProjectId = project.Id, AssetId = photoFile.Id,
+            Notes = "Gear bay painted\nTwo coats", TakenAt = Date.AddDays(-2), Stage = BuildPhotoStage.Wip,
+        };
+        project.ProjectPhotoId = photo.Id;
 
         var imageRef = new Reference
         {
@@ -97,13 +115,24 @@ public static class Sample
         var paint = new Paint
         {
             Id = Ids.New(), CreatedAt = Date, UpdatedAt = Date, Brand = "Tamiya", Range = "Acrylic XF", Code = "XF-54",
-            Name = "Dark Sea Grey", StandardCode = "BS 640", IdentityKey = "tamiya|acrylic xf|xf54", SwatchHex = "#6B7378",
+            Name = "Dark Sea Grey", StandardSystem = "bs381c", StandardCode = "640", Match = "closest", Type = "alcoholAcrylic",
+            IdentityKey = "tamiya|acrylic xf|xf54", SwatchHex = "#6B7378",
+        };
+        var white = new Paint
+        {
+            Id = Ids.New(), CreatedAt = Date, UpdatedAt = Date, Brand = "Tamiya", Range = "Acrylic XF", Code = "XF-2",
+            Name = "Flat White", StandardCode = "", IdentityKey = "tamiya|acrylic xf|xf2",
+        };
+        var mix = new Paint
+        {
+            Id = Ids.New(), CreatedAt = Date, UpdatedAt = Date, Brand = "Custom", Range = "", Code = "", Name = "Faded Sea Grey",
+            StandardCode = "", IsMix = true, IdentityKey = "mix|custom|faded sea grey", SwatchHex = "#8A9196",
         };
 
         var snapshot = new LibrarySnapshot
         {
             Projects = [project],
-            Assets = [image, pdf, partPicture],
+            Assets = [image, pdf, partPicture, photoFile, boxArt],
             References = [imageRef, pdfRef, video, unknownKind],
             Tags = [tag],
             ReferenceTags = [new ReferenceTag { Id = Ids.New(), CreatedAt = Date, UpdatedAt = Date, ReferenceId = imageRef.Id, TagId = tag.Id }],
@@ -120,13 +149,40 @@ public static class Sample
                     Id = Ids.New(), CreatedAt = Date, UpdatedAt = Date, ReferenceId = imageRef.Id, PageIndex = 0, Kind = "note",
                     Color = "orange", X = 0.1, Y = 0.2, Width = 0.3, Height = 0.15, Text = "",
                 },
+                new Markup
+                {
+                    Id = Ids.New(), CreatedAt = Date, UpdatedAt = Date, BuildPhotoId = photo.Id, PageIndex = 0, Kind = "note",
+                    Color = "yellow", X = 0.4, Y = 0.5, Width = 0.2, Height = 0.1, Text = "Brake lines",
+                },
             ],
-            Paints = [paint],
+            Paints = [paint, white, mix],
+            PaintMixParts =
+            [
+                new PaintMixPart { Id = Ids.New(), CreatedAt = Date, UpdatedAt = Date, MixId = mix.Id, PaintId = paint.Id, Parts = 3, Position = 0 },
+                new PaintMixPart { Id = Ids.New(), CreatedAt = Date, UpdatedAt = Date, MixId = mix.Id, PaintId = white.Id, Parts = 1.5, Position = 1 },
+            ],
+            BuildPhotos = [photo],
+            BuildPhotoTags = [new BuildPhotoTag { Id = Ids.New(), CreatedAt = Date, UpdatedAt = Date, BuildPhotoId = photo.Id, TagId = tag.Id }],
+            Kits =
+            [
+                new Kit
+                {
+                    Id = Ids.New(), CreatedAt = Date, UpdatedAt = Date, Brand = "Tamiya", Name = "F-16CJ Fighting Falcon", Scale = "1:48",
+                    Number = "61098", Owned = true, Status = KitStatus.Wip, Rating = 5, Link = "https://www.scalemates.com/kits/tamiya-61098",
+                    PricePaid = 89.95m, ForSale = false, SalePrice = 120.00m, ProjectId = project.Id, PictureAssetId = boxArt.Id,
+                },
+                new Kit
+                {
+                    Id = Ids.New(), CreatedAt = Date, UpdatedAt = Date, Brand = "Italeri", Name = "Super Cobra", Owned = false,
+                    Status = "mint", ForSale = false,
+                },
+            ],
             OwnedPaints = [new OwnedPaint { Id = Ids.New(), CreatedAt = Date, UpdatedAt = Date, PaintId = paint.Id }],
             ProjectPaints =
             [
                 new ProjectPaint { Id = Ids.New(), CreatedAt = Date, UpdatedAt = Date, ProjectId = project.Id, PaintId = paint.Id, UsedFor = "Upper surfaces" },
-                new ProjectPaint { Id = Ids.New(), CreatedAt = Date, UpdatedAt = Date, ProjectId = project.Id, Standard = "FS 36270" },
+                new ProjectPaint { Id = Ids.New(), CreatedAt = Date, UpdatedAt = Date, ProjectId = project.Id, StandardSystem = "fs595", Standard = "36270" },
+                new ProjectPaint { Id = Ids.New(), CreatedAt = Date, UpdatedAt = Date, ProjectId = project.Id, PaintId = mix.Id, UsedFor = "Faded panels", Notes = "Lightened 20%" },
             ],
             AftermarketItems =
             [
@@ -144,6 +200,8 @@ public static class Sample
             [image.OriginalRelativePath] = JpegBytes,
             [pdf.OriginalRelativePath] = PdfBytes,
             [partPicture.OriginalRelativePath] = JpegBytes,
+            [photoFile.OriginalRelativePath] = JpegBytes,
+            [boxArt.OriginalRelativePath] = PosterBytes,
             [$"Posters/{video.Id}.jpg"] = PosterBytes,
         };
         return (snapshot, files);

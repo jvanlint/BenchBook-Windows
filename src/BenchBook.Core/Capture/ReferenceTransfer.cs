@@ -51,6 +51,8 @@ public static class ReferenceTransfer
                 }
                 if (mode == TransferMode.Move)
                 {
+                    // Moving a reference updates both projects.
+                    store.TouchProjectsIn(transaction, [entry.Reference.ProjectId, targetProjectId]);
                     entry.Reference.ProjectId = targetProjectId;
                     entry.Reference.UpdatedAt = now;
                     store.UpdateReferenceRow(entry.Reference, transaction);
@@ -60,6 +62,7 @@ public static class ReferenceTransfer
                 {
                     var copy = Copy(entry, targetProjectId, now);
                     store.InsertCopy(entry.Reference.Id, copy, transaction);
+                    store.TouchProjectsIn(transaction, [targetProjectId]);
                     posters.Add((location.PosterPath(entry.Reference.Id), location.PosterPath(copy.Reference.Id)));
                     transferred.Add(copy);
                 }

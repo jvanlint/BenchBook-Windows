@@ -27,7 +27,22 @@ internal static class BackupJson
             WriteIndented = false,
         };
         options.Converters.Add(new IsoDateConverter());
+        options.Converters.Add(new MoneyConverter());
         return options;
+    }
+
+    /// <summary>Prices are strings such as "18.50", so they're never rounded.</summary>
+    private sealed class MoneyConverter : JsonConverter<decimal>
+    {
+        public override decimal Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType == JsonTokenType.Number) return reader.GetDecimal();
+            var text = reader.GetString();
+            return Money.TryRead(text, out var amount) ? amount : throw new JsonException($"“{text}” isn't an amount.");
+        }
+
+        public override void Write(Utf8JsonWriter writer, decimal value, JsonSerializerOptions options) =>
+            writer.WriteStringValue(Money.Write(value));
     }
 
     private sealed class IsoDateConverter : JsonConverter<DateTimeOffset>

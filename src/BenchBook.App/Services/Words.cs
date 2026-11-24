@@ -48,7 +48,11 @@ internal static class Words
         _ => "\uE721",                        // Search
     };
 
-    /// <summary>"Tamiya · 1:48 · F-16CJ Block 50", leaving out empty parts.</summary>
-    public static string ProjectSummary(Project project) =>
-        string.Join(" · ", new[] { project.Manufacturer, project.Scale, project.Subject }.Where(s => !string.IsNullOrWhiteSpace(s)));
+    /// <summary>"Italeri · 1:72 · AH-1W" or "2 kits · Normandy", leaving out empty parts.</summary>
+    public static string ProjectSummary(Project project, IReadOnlyList<Kit> kits) =>
+        BenchBook.Core.Projects.ProjectService.Summary(project, kits);
+
+    /// <summary>Each project's kits, for <see cref="ProjectSummary"/>.</summary>
+    public static ILookup<string, Kit> KitsByProject(AppServices services) =>
+        services.WithStore(s => s.Kits()).Where(k => k.ProjectId is not null).ToLookup(k => k.ProjectId!, Ids.Comparer);
 }

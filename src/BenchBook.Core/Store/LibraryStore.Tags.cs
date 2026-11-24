@@ -44,6 +44,7 @@ public sealed partial class LibraryStore
         using var transaction = _connection.BeginTransaction();
         foreach (var name in names)
             Link(TagFor(name, transaction).Id, referenceIds, transaction);
+        TouchReferenceProjects(transaction, referenceIds);
         transaction.Commit();
     }
 
@@ -52,6 +53,7 @@ public sealed partial class LibraryStore
     {
         using var transaction = _connection.BeginTransaction();
         Link(tagId, referenceIds, transaction);
+        TouchReferenceProjects(transaction, referenceIds);
         transaction.Commit();
     }
 
@@ -63,6 +65,7 @@ public sealed partial class LibraryStore
             Run("DELETE FROM reference_tags WHERE tagId = $t AND referenceId = $r", transaction, ("$t", tagId), ("$r", id));
             Touch("reference_items", id, transaction);
         }
+        TouchReferenceProjects(transaction, referenceIds);
         transaction.Commit();
     }
 
@@ -116,6 +119,14 @@ public sealed partial class LibraryStore
         {
             var references = ReferenceTagsTable.ReadWhere(_connection, "tagId = $t", transaction, ("$t", source.Id)).Select(l => l.ReferenceId).ToList();
             Link(target.Id, references, transaction);
+            // Build photos with the tag move across too.
+            var linked = BuildPhotoTagsTable.ReadWhere(_connection, "tagId = $t", transaction, ("$t", target.Id)).Select(l => l.BuildPhotoId).ToHashSet(Ids.Comparer);
+            var now = IsoDate.Now();
+            var moved = BuildPhotoTagsTable.ReadWhere(_connection, "tagId = $t", transaction, ("$t", source.Id))
+                .Where(l => linked.Add(l.BuildPhotoId))
+                .Select(l => new BuildPhotoTag { Id = Ids.New(), CreatedAt = now, UpdatedAt = now, BuildPhotoId = l.BuildPhotoId, TagId = target.Id })
+                .ToList();
+            BuildPhotoTagsTable.InsertAll(_connection, transaction, moved);
             target.Color ??= source.Color;
             Run("DELETE FROM tags WHERE id = $id", transaction, ("$id", source.Id));
         }
@@ -145,11 +156,11 @@ public sealed partial class LibraryStore
         transaction.Commit();
     }
 
-    /// <summary>Deletes tags no reference uses. Returns how many.</summary>
+    /// <summary>Deletes tags no reference or build photo uses. Returns how many.</summary>
     public int RemoveUnusedTags()
     {
         using var command = _connection.CreateCommand();
-        command.CommandText = "DELETE FROM tags WHERE id NOT IN (SELECT tagId FROM reference_tags)";
+        command.CommandText = "DELETE FROM tags WHERE id NOT IN (SELECT tagId FROM reference_tags) AND id NOT IN (SELECT tagId FROM build_photo_tags)";
         return command.ExecuteNonQuery();
     }
 

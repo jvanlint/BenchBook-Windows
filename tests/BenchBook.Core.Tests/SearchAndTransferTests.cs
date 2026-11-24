@@ -55,9 +55,11 @@ public class SearchTests
         Sample.Install(library);
         using var store = library.OpenStore();
         var search = new LibrarySearch(store);
+        // The project is found by its kit's brand; Tamiya's two paints are found, the Custom mix isn't.
         var results = search.Search(new SearchQuery("tamiya"));
         Assert.Single(results.Projects);
-        Assert.Single(results.Paints);
+        Assert.Equal(2, results.Paints.Count);
+        Assert.Single(search.Search(new SearchQuery("61098")).Projects);
 
         var tagged = search.Search(new SearchQuery("", ["wheel well"]));
         Assert.Empty(tagged.Projects);
@@ -133,7 +135,7 @@ public class TransferTests
         var video = copies.Single(c => c.Reference.Kind == ReferenceKind.VideoLink);
         Assert.Equal(90, Assert.Single(video.Moments).OffsetSeconds);
         Assert.Equal(Sample.PosterBytes, File.ReadAllBytes(library.Location.PosterPath(video.Reference.Id)));
-        Assert.Equal(3, store.ReadSnapshot().Assets.Count); // No new files.
+        Assert.Equal(sample.Assets.Count, store.ReadSnapshot().Assets.Count); // No new files.
 
         // Copying again finds the files already there.
         var again = ReferenceTransfer.Transfer(store, library.Location, [ids[0], ids[1]], target.Id, TransferMode.Copy);

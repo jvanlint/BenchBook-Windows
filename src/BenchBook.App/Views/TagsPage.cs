@@ -98,7 +98,7 @@ internal sealed partial class TagsPage : Page
             row.DataContext = usage;
             _list.Items.Add(row);
         }
-        var unused = _tags.Count(t => t.References == 0);
+        var unused = _tags.Count(t => t.IsUnused);
         _removeUnused.IsEnabled = unused > 0;
         ToolTipService.SetToolTip(_removeUnused, unused > 0 ? $"Delete the {unused:N0} tags no reference uses" : "Every tag is in use");
         _empty.Visibility = _tags.Count == 0 ? Visibility.Visible : Visibility.Collapsed;

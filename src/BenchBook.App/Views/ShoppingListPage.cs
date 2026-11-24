@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using BenchBook.App.Services;
+using BenchBook.Core.Kits;
 using BenchBook.Core.Paints;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -57,7 +58,7 @@ internal sealed partial class ShoppingListPage : Page
             empty.Children.Add(new TextBlock { Text = "Nothing to Buy", Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"], HorizontalAlignment = HorizontalAlignment.Center });
             empty.Children.Add(new TextBlock
             {
-                Text = "Paints you don't own that a project needs appear here, with colours that have no paint chosen yet. Completed projects aren't included.",
+                Text = "Kits and paints you don't own that a project needs appear here, with colours that have no paint chosen yet. Completed projects aren't included.",
                 TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center,
                 Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
             });
@@ -65,6 +66,11 @@ internal sealed partial class ShoppingListPage : Page
             return;
         }
 
+        if (_list.Kits.Count > 0)
+        {
+            var section = Section("Kits");
+            foreach (var kit in _list.Kits) section.Children.Add(KitRow(kit));
+        }
         foreach (var group in _list.Groups)
         {
             var section = Section(group.Name);
@@ -116,6 +122,46 @@ internal sealed partial class ShoppingListPage : Page
         menu.Items.Add(show);
         row.ContextFlyout = menu;
         return row;
+    }
+
+    private Grid KitRow(ShoppingList.KitItem item)
+    {
+        var kit = item.Kit;
+        var row = new Grid { ColumnSpacing = 12, Padding = new Thickness(0, 4, 0, 4), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
+        TableRows.Columns(row, "32", "40", "1*");
+        var bought = new CheckBox { MinWidth = 0, Padding = new Thickness(0) };
+        ToolTipService.SetToolTip(bought, "Mark as bought: it's owned, BNIB, and off the list");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(bought, $"Mark {kit.Name} as Bought");
+        bought.Click += (_, _) => MarkBought(kit);
+        TableRows.Cell(row, bought, 0);
+        TableRows.Cell(row, KitViews.Picture(_services, kit.PictureAssetId, 36), 1);
+        var text = TableRows.TwoLines(kit.Name, KitText.Details(kit));
+        text.Children.Add(TableRows.Text(item.Project, secondary: true));
+        TableRows.Cell(row, text, 2);
+
+        var menu = new MenuFlyout();
+        var mark = new MenuFlyoutItem { Text = "Mark as Bought" };
+        mark.Click += (_, _) => MarkBought(kit);
+        menu.Items.Add(mark);
+        var show = new MenuFlyoutItem { Text = "Show in Kits" };
+        show.Click += (_, _) => _services.ShowKit?.Invoke(kit.Id);
+        menu.Items.Add(show);
+        if (kit.ProjectId is { } projectId)
+        {
+            var project = new MenuFlyoutItem { Text = "Show Project" };
+            project.Click += (_, _) => _services.ShowProject?.Invoke(projectId);
+            menu.Items.Add(project);
+        }
+        row.ContextFlyout = menu;
+        return row;
+    }
+
+    /// <summary>A needed kit has been bought: it's owned, BNIB, and leaves the list.</summary>
+    private void MarkBought(BenchBook.Core.Model.Kit kit)
+    {
+        _services.WithStore(s => { KitService.MarkBought(s, new[] { kit }); return 0; });
+        _services.NotifyLibraryChanged();
+        Load();
     }
 
     /// <summary>Ticking a paint as bought marks it owned, and it leaves the list.</summary>

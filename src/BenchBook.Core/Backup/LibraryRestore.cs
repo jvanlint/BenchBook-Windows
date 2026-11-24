@@ -247,12 +247,18 @@ public static class LibraryRestore
         }
     }
 
-    private static LibrarySnapshot ReadLibrary(string path)
+    /// <summary>
+    /// The records, with an older schema brought up to date first, e.g. a 1.0.0
+    /// project's kit details moved into its notes (library-format.md, "Compatibility").
+    /// </summary>
+    internal static LibrarySnapshot ReadLibrary(string path)
     {
         try
         {
             using var input = File.OpenRead(path);
-            return JsonSerializer.Deserialize<LibrarySnapshot>(input, BackupJson.Options) ?? throw BackupException.NotABackup();
+            if (System.Text.Json.Nodes.JsonNode.Parse(input) is not System.Text.Json.Nodes.JsonObject library) throw BackupException.NotABackup();
+            SchemaUpgrades.Upgrade(library);
+            return library.Deserialize<LibrarySnapshot>(BackupJson.Options) ?? throw BackupException.NotABackup();
         }
         catch (JsonException error)
         {

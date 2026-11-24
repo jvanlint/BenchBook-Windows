@@ -66,12 +66,13 @@ public sealed record ProjectHits(Project Project, IReadOnlyList<ReferenceHit> Hi
 
 public sealed record SearchResults(
     IReadOnlyList<Project> Projects,
+    IReadOnlyList<Kit> Kits,
     IReadOnlyList<Paint> Paints,
     IReadOnlyList<AftermarketItem> AftermarketItems,
     IReadOnlyList<ProjectHits> ReferenceGroups)
 {
     public int ReferenceCount => ReferenceGroups.Sum(g => g.Hits.Count);
-    public bool IsEmpty => Projects.Count == 0 && Paints.Count == 0 && AftermarketItems.Count == 0 && ReferenceGroups.Count == 0;
+    public bool IsEmpty => Projects.Count == 0 && Kits.Count == 0 && Paints.Count == 0 && AftermarketItems.Count == 0 && ReferenceGroups.Count == 0;
 }
 
 /// <summary>
@@ -85,6 +86,7 @@ public sealed class LibrarySearch
     private sealed record Entry(ReferenceEntry Reference, HashSet<string> Tags, List<Part> Parts);
 
     private readonly List<(Project Project, List<SearchField> Fields)> _projects;
+    private readonly List<(Kit Kit, List<SearchField> Fields)> _kits;
     private readonly List<(Paint Paint, List<SearchField> Fields)> _paints;
     private readonly List<(AftermarketItem Item, List<SearchField> Fields)> _items;
     private readonly List<Entry> _references;
@@ -95,16 +97,22 @@ public sealed class LibrarySearch
         static List<SearchField> Fields(params string?[] texts) =>
             texts.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => SearchField.Of(t!)).ToList();
 
+        // A project is found by its kits' brand, name, scale and number too.
+        var kits = snapshot.Kits.Where(k => k.ProjectId is not null).ToLookup(k => k.ProjectId!, Ids.Comparer);
         _projects = snapshot.Projects.OrderBy(p => p.Name, NaturalComparer.Instance)
-            .Select(p => (p, Fields(p.Name, p.Manufacturer, p.Subject, p.Scale, p.KitNumber, p.MarkingsScheme, p.Notes))).ToList();
+            .Select(p => (p, Fields([p.Name, p.Subject, .. kits[p.Id].SelectMany(k => new[] { k.Brand, k.Name, k.Scale, k.Number }), p.MarkingsScheme, p.Notes])))
+            .ToList();
+        // Each copy of a kit is listed.
+        _kits = Kits.KitText.Sorted(snapshot.Kits).Select(k => (k, Fields(k.Brand, k.Name, k.Number, k.Notes))).ToList();
         _paints = snapshot.Paints.OrderBy(p => p.Brand, NaturalComparer.Instance).ThenBy(p => p.Code, NaturalComparer.Instance)
-            .Select(p => (p, Fields(p.Brand, p.Range, p.Code, p.Name, p.StandardCode, p.Notes))).ToList();
+            .Select(p => (p, Fields(p.Brand, p.Range, p.Code, p.Name, p.Standard?.SearchText, p.Notes))).ToList();
         _items = snapshot.AftermarketItems.OrderBy(i => i.ProductName, NaturalComparer.Instance)
             .Select(i => (i, Fields(i.ProductName, i.Manufacturer, i.ProductNumber, AftermarketTypeName(i.Type), i.ScaleCompatibility, i.Notes,
                 Uri.TryCreate(i.ProductUrl, UriKind.Absolute, out var url) ? url.Host : null))).ToList();
 
         var entries = store.ReferenceEntries(snapshot.References.Select(r => r.Id));
-        var markups = snapshot.Markups.GroupBy(m => m.ReferenceId, Ids.Comparer).ToDictionary(g => g.Key, g => g.ToList(), Ids.Comparer);
+        var markups = snapshot.Markups.Where(m => m.ReferenceId is not null)
+            .GroupBy(m => m.ReferenceId!, Ids.Comparer).ToDictionary(g => g.Key, g => g.ToList(), Ids.Comparer);
         _references = entries.Select(e => new Entry(
             e,
             e.Tags.Select(t => t.NormalizedName).ToHashSet(StringComparer.Ordinal),
@@ -113,9 +121,10 @@ public sealed class LibrarySearch
 
     public SearchResults Search(SearchQuery query)
     {
-        if (query.IsEmpty) return new SearchResults([], [], [], []);
+        if (query.IsEmpty) return new SearchResults([], [], [], [], []);
         // Only references have tags, so a tag token leaves only references.
         var projects = query.Tags.Count > 0 ? [] : _projects.Where(p => query.MatchesEveryWord(p.Fields)).Select(p => p.Project).ToList();
+        var kits = query.Tags.Count > 0 ? [] : _kits.Where(k => query.MatchesEveryWord(k.Fields)).Select(k => k.Kit).ToList();
         var paints = query.Tags.Count > 0 ? [] : _paints.Where(p => query.MatchesEveryWord(p.Fields)).Select(p => p.Paint).ToList();
         var items = query.Tags.Count > 0 ? [] : _items.Where(i => query.MatchesEveryWord(i.Fields)).Select(i => i.Item).ToList();
 
@@ -131,7 +140,7 @@ public sealed class LibrarySearch
         var groups = _projects.Where(p => hits.ContainsKey(p.Project.Id)).Select(p => new ProjectHits(p.Project,
             // Title matches first, then newest first, as in the gallery.
             hits[p.Project.Id].OrderByDescending(h => h.Matches.Any(m => m.IsTitle)).ThenByDescending(h => h.Entry.Reference.CapturedAt).ToList())).ToList();
-        return new SearchResults(projects, paints, items, groups);
+        return new SearchResults(projects, kits, paints, items, groups);
     }
 
     private static List<Part> Parts(ReferenceEntry entry, List<Markup> markups)

@@ -34,16 +34,36 @@ public static class IsoDate
             return false;
         // Require the date part to be ISO shaped, so "13/11/2026" isn't taken.
         if (text.Length < 10 || text[4] != '-' || text[7] != '-') return false;
-        date = TruncateToMilliseconds(parsed.ToUniversalTime());
+        date = RoundToMilliseconds(parsed.ToUniversalTime());
         return true;
     }
 
     public static DateTimeOffset Read(string text) =>
         TryRead(text, out var date) ? date : throw new FormatException($"“{text}” isn't an ISO 8601 date.");
 
-    /// <summary>The stored precision. Keeps round trips exact.</summary>
-    public static DateTimeOffset TruncateToMilliseconds(DateTimeOffset date) =>
-        new(date.Ticks - date.Ticks % TimeSpan.TicksPerMillisecond, date.Offset);
+    /// <summary>
+    /// The stored precision, to the nearest millisecond (library-format.md, "Value
+    /// types"). Keeps round trips exact.
+    /// </summary>
+    public static DateTimeOffset RoundToMilliseconds(DateTimeOffset date)
+    {
+        var ms = TimeSpan.TicksPerMillisecond;
+        var ticks = (date.Ticks + ms / 2) / ms * ms;
+        return new DateTimeOffset(ticks, date.Offset);
+    }
 
-    public static DateTimeOffset Now() => TruncateToMilliseconds(DateTimeOffset.UtcNow);
+    public static DateTimeOffset Now() => RoundToMilliseconds(DateTimeOffset.UtcNow);
+}
+
+/// <summary>
+/// The decimal value type: an amount of money as a string with a full stop and
+/// two decimals and no currency, e.g. "18.50" (library-format.md, "Value types").
+/// </summary>
+public static class Money
+{
+    public static string Write(decimal amount) => amount.ToString("0.00", CultureInfo.InvariantCulture);
+
+    /// <summary>A plain number with a full stop, as written by either app.</summary>
+    public static bool TryRead(string? text, out decimal amount) =>
+        decimal.TryParse(text, NumberStyles.AllowDecimalPoint | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out amount);
 }

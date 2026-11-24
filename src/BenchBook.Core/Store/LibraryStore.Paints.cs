@@ -37,6 +37,20 @@ public sealed partial class LibraryStore
         return result;
     }
 
+    /// <summary>For each paint in a mix's recipe, the mixes that use it.</summary>
+    public Dictionary<string, List<Paint>> PaintMixes()
+    {
+        var paints = PaintsTable.ReadAll(_connection, null).ToDictionary(p => p.Id, Ids.Comparer);
+        var result = new Dictionary<string, List<Paint>>(Ids.Comparer);
+        foreach (var part in PaintMixPartsTable.ReadAll(_connection, null))
+        {
+            if (!paints.TryGetValue(part.MixId, out var mix)) continue;
+            if (!result.TryGetValue(part.PaintId, out var mixes)) result[part.PaintId] = mixes = [];
+            mixes.Add(mix);
+        }
+        return result;
+    }
+
     public void InsertPaint(Paint paint, bool owned, SqliteTransaction? transaction = null)
     {
         if (transaction is null)
@@ -48,11 +62,19 @@ public sealed partial class LibraryStore
         if (owned) SetOwned(paint.Id, true, transaction);
     }
 
-    public void UpdatePaint(Paint paint, bool owned) => RunInTransaction(t =>
+    public void UpdatePaint(Paint paint, bool owned, SqliteTransaction? transaction = null)
     {
-        PaintsTable.Update(_connection, paint, t);
-        SetOwned(paint.Id, owned, t);
-    });
+        if (transaction is null)
+        {
+            RunInTransaction(t => UpdatePaint(paint, owned, t));
+            return;
+        }
+        PaintsTable.Update(_connection, paint, transaction);
+        SetOwned(paint.Id, owned, transaction);
+    }
+
+    public bool IsOwned(string paintId, SqliteTransaction? transaction = null) =>
+        OwnedPaintsTable.ReadWhere(_connection, "paintId = $id", transaction, ("$id", paintId)).Count > 0;
 
     public void SetOwned(string paintId, bool owned, SqliteTransaction? transaction = null)
     {
@@ -73,7 +95,7 @@ public sealed partial class LibraryStore
         }
     }
 
-    /// <summary>Deletes the paint and its ownership. The store refuses while a project uses it.</summary>
+    /// <summary>Deletes the paint, its ownership and a mix's recipe lines. The store refuses while a project or a recipe uses it.</summary>
     public void DeletePaint(string paintId) => RunInTransaction(t => Run("DELETE FROM paints WHERE id = $id", t, ("$id", paintId)));
 
     // MARK: Project paints
@@ -83,13 +105,31 @@ public sealed partial class LibraryStore
 
     public List<ProjectPaint> AllProjectPaints() => ProjectPaintsTable.ReadAll(_connection, null);
 
-    public void InsertProjectPaints(IEnumerable<ProjectPaint> rows) => RunInTransaction(t => ProjectPaintsTable.InsertAll(_connection, t, rows));
+    public void InsertProjectPaints(IEnumerable<ProjectPaint> rows) => RunInTransaction(t =>
+    {
+        var list = rows.ToList();
+        ProjectPaintsTable.InsertAll(_connection, t, list);
+        TouchProjects(t, list.Select(r => r.ProjectId));
+    });
 
-    public bool UpdateProjectPaint(ProjectPaint row) => ProjectPaintsTable.Update(_connection, row);
+    public bool UpdateProjectPaint(ProjectPaint row)
+    {
+        var updated = false;
+        RunInTransaction(t =>
+        {
+            updated = ProjectPaintsTable.Update(_connection, row, t);
+            if (updated) TouchProjects(t, [row.ProjectId]);
+        });
+        return updated;
+    }
 
     public void DeleteProjectPaints(IEnumerable<string> ids) => RunInTransaction(t =>
     {
-        foreach (var id in ids) Run("DELETE FROM project_paints WHERE id = $id", t, ("$id", id));
+        foreach (var id in ids)
+        {
+            TouchProjects(t, [Scalar("SELECT projectId FROM project_paints WHERE id = $id", t, id)]);
+            Run("DELETE FROM project_paints WHERE id = $id", t, ("$id", id));
+        }
     });
 
     // MARK: Aftermarket items
@@ -100,15 +140,29 @@ public sealed partial class LibraryStore
     public AftermarketItem? AftermarketItem(string id) =>
         AftermarketTable.ReadWhere(_connection, "id = $id", ("$id", id)).FirstOrDefault();
 
-    public void InsertAftermarketItem(AftermarketItem item) => RunInTransaction(t => AftermarketTable.InsertAll(_connection, t, [item]));
+    public void InsertAftermarketItem(AftermarketItem item) => RunInTransaction(t =>
+    {
+        AftermarketTable.InsertAll(_connection, t, [item]);
+        TouchProjects(t, [item.ProjectId]);
+    });
 
-    public bool UpdateAftermarketItem(AftermarketItem item) => AftermarketTable.Update(_connection, item);
+    public bool UpdateAftermarketItem(AftermarketItem item)
+    {
+        var updated = false;
+        RunInTransaction(t =>
+        {
+            updated = AftermarketTable.Update(_connection, item, t);
+            if (updated) TouchProjects(t, [item.ProjectId]);
+        });
+        return updated;
+    }
 
     /// <summary>Saves a picture's asset and points the item at it, in one transaction.</summary>
     public void SetAftermarketImage(AftermarketItem item, Asset? asset) => RunInTransaction(t =>
     {
         if (asset is not null) AssetsTable.InsertAll(_connection, t, [asset]);
         AftermarketTable.Update(_connection, item, t);
+        TouchProjects(t, [item.ProjectId]);
     });
 
     /// <summary>Deletes items. Returns the picture assets they used, so unused files can be tidied.</summary>
@@ -119,6 +173,7 @@ public sealed partial class LibraryStore
         {
             foreach (var id in ids)
             {
+                TouchProjects(t, [Scalar("SELECT projectId FROM aftermarket_items WHERE id = $id", t, id)]);
                 using var command = _connection.CreateCommand();
                 command.Transaction = t;
                 command.CommandText = "DELETE FROM aftermarket_items WHERE id = $id RETURNING imageAssetId";
@@ -134,12 +189,27 @@ public sealed partial class LibraryStore
     public List<Markup> Markups(string referenceId) =>
         MarkupsTable.ReadWhere(_connection, "referenceId = $id", ("$id", referenceId));
 
-    public void InsertMarkup(Markup markup) => RunInTransaction(t => MarkupsTable.InsertAll(_connection, t, [markup]));
+    public void InsertMarkup(Markup markup) => RunInTransaction(t =>
+    {
+        MarkupsTable.InsertAll(_connection, t, [markup]);
+        TouchMarkupOwner(t, markup);
+    });
 
-    public bool UpdateMarkup(Markup markup) => MarkupsTable.Update(_connection, markup);
+    public bool UpdateMarkup(Markup markup)
+    {
+        var updated = false;
+        RunInTransaction(t =>
+        {
+            updated = MarkupsTable.Update(_connection, markup, t);
+            if (updated) TouchMarkupOwner(t, markup);
+        });
+        return updated;
+    }
 
     public void DeleteMarkups(IEnumerable<string> ids) => RunInTransaction(t =>
     {
-        foreach (var id in ids) Run("DELETE FROM markups WHERE id = $id", t, ("$id", id));
+        var list = ids.ToList();
+        TouchMarkupProjects(t, list);
+        foreach (var id in list) Run("DELETE FROM markups WHERE id = $id", t, ("$id", id));
     });
 }

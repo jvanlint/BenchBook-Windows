@@ -10,6 +10,7 @@
         <KeyboardAccelerator Modifiers="Control" Key="Number1" Invoked="Tab1_Invoked" />
         <KeyboardAccelerator Modifiers="Control" Key="Number2" Invoked="Tab2_Invoked" />
         <KeyboardAccelerator Modifiers="Control" Key="Number3" Invoked="Tab3_Invoked" />
+        <KeyboardAccelerator Modifiers="Control" Key="Number4" Invoked="Tab4_Invoked" />
     </Page.KeyboardAccelerators>
 
     <Grid Padding="32,20,32,12" RowSpacing="10">
@@ -59,6 +60,7 @@
         </Grid>
 
         <SelectorBar Grid.Row="1" x:Name="Tabs" SelectionChanged="Tabs_SelectionChanged">
+            <SelectorBarItem x:Name="KitsTab" Text="Kits" />
             <SelectorBarItem x:Name="ReferencesTab" Text="References" IsSelected="True" />
             <SelectorBarItem x:Name="PaintTab" Text="Paint" />
             <SelectorBarItem x:Name="AftermarketTab" Text="Aftermarket" />

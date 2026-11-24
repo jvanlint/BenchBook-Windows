@@ -46,10 +46,12 @@ public class PaintRuleTests
         Assert.Equal([("ak", "AK", 1), ("tamiya", "Tamiya", 3)], options.Select(o => (o.Key, o.Name, o.Count)));
     }
 
+    /// <summary>A paint whose standard is read from text, e.g. "FS 36270".</summary>
     internal static Paint Paint(string brand, string range, string code, string name = "", string standard = "") => new()
     {
         Id = Ids.New(), CreatedAt = Sample.Date, UpdatedAt = Sample.Date, Brand = brand, Range = range, Code = code,
-        Name = name, StandardCode = standard, IdentityKey = PaintIdentity.Key(brand, range, code),
+        Name = name, StandardSystem = PaintStandardParser.Parse(standard)?.SystemRaw ?? "", StandardCode = PaintStandardParser.Parse(standard)?.Code ?? "",
+        IdentityKey = PaintIdentity.Key(brand, range, code),
     };
 }
 
@@ -103,7 +105,7 @@ public class PaintServiceTests
         var paints = store.Paints().ToDictionary(p => p.Id, Ids.Comparer);
         var rows = PaintService.SortedRows(store.ProjectPaints(project.Id), paints);
         Assert.Equal(["FS 36270", "RLM 76", "AK RC001", "Tamiya XF-2", "Tamiya XF-10"],
-            rows.Select(r => r.PaintId is null ? r.Standard : PaintText.DisplayName(paints[r.PaintId])));
+            rows.Select(r => r.PaintId is null ? r.GuideStandard?.DisplayText : PaintText.DisplayName(paints[r.PaintId])));
         Assert.Equal("undersides", rows[1].UsedFor);
         Assert.Null(rows[0].UsedFor);
     }
@@ -138,8 +140,9 @@ public class PaintCsvTests
             "tamiya,acrylic xf,xf54,Again,,,,,");
 
         var summary = PaintCsvImporter.Import(store, csv);
-        Assert.Equal(2, summary.Added);
-        Assert.Equal(2, summary.Duplicates);
+        // "XF 1" is the catalogue's XF-1, which gains its name; the second XF-54 row repeats the first.
+        Assert.Equal((2, 1, 0, 1), (summary.Added, summary.Updated, summary.UpToDate, summary.Repeated));
+        Assert.Equal("Flat Black", store.Paints().Single(p => p.Code == "XF-1").Name);
         Assert.Equal([
             "Line 4: “bluish” isn't a colour like #4A5A6B, so no swatch was set.",
             "Line 5: a paint needs a brand and a code.",
@@ -147,9 +150,9 @@ public class PaintCsvTests
 
         var paints = store.Paints();
         var grey = paints.Single(p => p.Code == "XF-54");
-        Assert.Equal(("Dark Sea Grey", "FS 36270", "#6B7378", "thin 1:1"), (grey.Name, grey.StandardCode, grey.SwatchHex, grey.Notes));
+        Assert.Equal(("Dark Sea Grey", "fs595", "36270", "#6B7378", "thin 1:1"), (grey.Name, grey.StandardSystem, grey.StandardCode, grey.SwatchHex, grey.Notes));
         var gunze = paints.Single(p => p.Brand == "Gunze");
-        Assert.Equal("RLM 76", gunze.StandardCode);
+        Assert.Equal(("rlm", "76", "RLM 76"), (gunze.StandardSystem, gunze.StandardCode, gunze.Standard?.DisplayText));
         Assert.Null(gunze.SwatchHex);
         Assert.Equal(new[] { grey.Id, gunze.Id }.Order(), store.OwnedPaintIds().Order());
     }
@@ -172,17 +175,19 @@ public class PaintCsvTests
         using var store = library.OpenStore();
         PaintService.Create(store, new PaintDraft { Brand = "Tamiya", Range = "Acrylic XF", Code = "XF-10", Name = "Flat Brown" });
         PaintService.Create(store, new PaintDraft { Brand = "Tamiya", Range = "Acrylic XF", Code = "XF-2", Name = "Flat White, \"bright\"", IsOwned = true, Notes = "Primer" });
-        PaintService.Create(store, new PaintDraft { Brand = "AK", Range = "Real Colors", Code = "RC001", StandardCode = "FS 36270", SwatchHex = "#888" });
+        PaintService.Create(store, new PaintDraft { Brand = "AK", Range = "Real Colors", Code = "RC001", SwatchHex = "#888", Match = "exact", Type = "lacquer" }.WithStandardText("FS 36270"));
+        // A mix isn't exported.
+        PaintService.Create(store, new PaintDraft { Brand = "Custom", Name = "Faded Grey", IsMix = true });
         var paints = store.Paints();
         var owned = store.OwnedPaintIds();
 
         Assert.Equal(
-            "Brand,Range,Code,Name,FS/RLM,Colour\r\n" +
-            "AK,Real Colors,RC001,,FS 36270,#888888\r\n" +
-            "Tamiya,Acrylic XF,XF-2,\"Flat White, \"\"bright\"\"\",,\r\n" +
-            "Tamiya,Acrylic XF,XF-10,Flat Brown,,\r\n",
+            "Brand,Range,Code,Name,Standard,Standard Code,Match,Type,Colour\r\n" +
+            "AK,Real Colors,RC001,,FS 595,36270,Exact match,Lacquer,#888888\r\n" +
+            "Tamiya,Acrylic XF,XF-2,\"Flat White, \"\"bright\"\"\",,,,,\r\n" +
+            "Tamiya,Acrylic XF,XF-10,Flat Brown,,,,,\r\n",
             PaintCsvExporter.Csv(paints, owned));
-        Assert.EndsWith("XF-2,\"Flat White, \"\"bright\"\"\",,,yes,Primer\r\nTamiya,Acrylic XF,XF-10,Flat Brown,,,,\r\n",
+        Assert.EndsWith("XF-2,\"Flat White, \"\"bright\"\"\",,,,,,yes,Primer\r\nTamiya,Acrylic XF,XF-10,Flat Brown,,,,,,,\r\n",
             PaintCsvExporter.Csv(paints, owned, includeOwnership: true, includeNotes: true));
 
         // What's exported imports back unchanged.
@@ -190,6 +195,9 @@ public class PaintCsvTests
         using var copy = other.OpenStore();
         Assert.Equal(3, PaintCsvImporter.Import(copy, PaintCsvExporter.Csv(paints, owned, true, true)).Added);
         Assert.Equal(PaintCsvExporter.Csv(paints, owned, true, true), PaintCsvExporter.Csv(copy.Paints(), copy.OwnedPaintIds(), true, true));
+        // Importing it again changes nothing.
+        var again = PaintCsvImporter.Import(copy, PaintCsvExporter.Csv(paints, owned, true, true));
+        Assert.Equal((0, 0, 3), (again.Added, again.Updated, again.UpToDate));
     }
 }
 
@@ -203,7 +211,7 @@ public class ShoppingListTests
         var f16 = ProjectService.Create(store, new ProjectDraft { Name = "F-16C" });
         var spitfire = ProjectService.Create(store, new ProjectDraft { Name = "Spitfire" });
         var done = ProjectService.Create(store, new ProjectDraft { Name = "Done", Status = ProjectStatus.Completed });
-        var grey = PaintService.Create(store, new PaintDraft { Brand = "Tamiya", Range = "Acrylic XF", Code = "XF-54", Name = "Dark Sea Grey", StandardCode = "BS 640" });
+        var grey = PaintService.Create(store, new PaintDraft { Brand = "Tamiya", Range = "Acrylic XF", Code = "XF-54", Name = "Dark Sea Grey" }.WithStandardText("BS 640"));
         var black = PaintService.Create(store, new PaintDraft { Brand = "tamiya", Code = "XF-1", Name = "Flat Black" });
         var owned = PaintService.Create(store, new PaintDraft { Brand = "AK", Code = "RC001", IsOwned = true });
         var onlyDone = PaintService.Create(store, new PaintDraft { Brand = "Gunze", Code = "H-1" });
@@ -241,8 +249,8 @@ public class AftermarketTests
     {
         using var library = new TestLibrary();
         using var store = library.OpenStore();
-        var project = ProjectService.Create(store, new ProjectDraft { Name = "F-16C", Scale = "1:48" });
-        Assert.Equal("1:48", AftermarketDraft.For(project).ScaleCompatibility);
+        var project = ProjectService.Create(store, new ProjectDraft { Name = "F-16C" });
+        Assert.Equal("", AftermarketDraft.For(project).ScaleCompatibility);
         Assert.Equal("A part needs a name.", Assert.Throws<AftermarketException>(() => AftermarketService.Create(store, project.Id, new AftermarketDraft())).Message);
         Assert.Equal("The product page isn't a web address.",
             Assert.Throws<AftermarketException>(() => AftermarketService.Create(store, project.Id, new AftermarketDraft { ProductName = "Decals", ProductUrl = "not a page" })).Message);

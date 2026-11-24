@@ -7,8 +7,12 @@ namespace BenchBook.Core.Store;
 public sealed record ReferenceEntry(
     Reference Reference, Asset? Asset, IReadOnlyList<Tag> Tags, int MarkupCount, IReadOnlyList<VideoMoment> Moments);
 
-/// <summary>A tag and how many references use it.</summary>
-public sealed record TagUsage(Tag Tag, int References, int Projects);
+/// <summary>A tag and how many references and build photos use it.</summary>
+public sealed record TagUsage(Tag Tag, int References, int Projects, int BuildPhotos = 0)
+{
+    /// <summary>A tag is in use while any reference or build photo has it.</summary>
+    public bool IsUnused => References == 0 && BuildPhotos == 0;
+}
 
 public sealed partial class LibraryStore
 {
@@ -53,7 +57,7 @@ public sealed partial class LibraryStore
         var markupCounts = new Dictionary<string, int>(Ids.Comparer);
         using (var command = _connection.CreateCommand())
         {
-            command.CommandText = "SELECT referenceId, count(*) FROM markups GROUP BY referenceId";
+            command.CommandText = "SELECT referenceId, count(*) FROM markups WHERE referenceId IS NOT NULL GROUP BY referenceId";
             using var reader = command.ExecuteReader();
             while (reader.Read()) markupCounts[reader.GetString(0)] = reader.GetInt32(1);
         }
@@ -90,21 +94,28 @@ public sealed partial class LibraryStore
     /// <summary>Tags by how many references use them (most first), then by name.</summary>
     public List<TagUsage> TagsByUsage()
     {
-        var usage = new Dictionary<string, (int References, int Projects)>(Ids.Comparer);
+        var usage = new Dictionary<string, (int References, int Projects, int BuildPhotos)>(Ids.Comparer);
         using (var command = _connection.CreateCommand())
         {
             command.CommandText = """
-                SELECT t.id, count(l.id), count(DISTINCT r.projectId)
+                SELECT t.id,
+                    (SELECT count(*) FROM reference_tags l WHERE l.tagId = t.id),
+                    (SELECT count(DISTINCT projectId) FROM (
+                        SELECT r.projectId FROM reference_tags l JOIN reference_items r ON r.id = l.referenceId WHERE l.tagId = t.id
+                        UNION ALL
+                        SELECT b.projectId FROM build_photo_tags l JOIN build_photos b ON b.id = l.buildPhotoId WHERE l.tagId = t.id)),
+                    (SELECT count(*) FROM build_photo_tags l WHERE l.tagId = t.id)
                 FROM tags t
-                LEFT JOIN reference_tags l ON l.tagId = t.id
-                LEFT JOIN reference_items r ON r.id = l.referenceId
-                GROUP BY t.id
                 """;
             using var reader = command.ExecuteReader();
-            while (reader.Read()) usage[reader.GetString(0)] = (reader.GetInt32(1), reader.GetInt32(2));
+            while (reader.Read()) usage[reader.GetString(0)] = (reader.GetInt32(1), reader.GetInt32(2), reader.GetInt32(3));
         }
         return TagsTable.ReadAll(_connection, null)
-            .Select(t => new TagUsage(t, usage.GetValueOrDefault(t.Id).References, usage.GetValueOrDefault(t.Id).Projects))
+            .Select(t =>
+            {
+                var u = usage.GetValueOrDefault(t.Id);
+                return new TagUsage(t, u.References, u.Projects, u.BuildPhotos);
+            })
             .OrderByDescending(u => u.References)
             .ThenBy(u => u.Tag.Name, NaturalComparer.Instance)
             .ToList();
@@ -128,18 +139,22 @@ public sealed partial class LibraryStore
         ReferencesTable.InsertAll(_connection, transaction, [reference]);
         VideoMomentsTable.InsertAll(_connection, transaction, moments);
         SetTags(transaction, reference.Id, tagNames);
+        TouchProjects(transaction, [reference.ProjectId]);
         transaction.Commit();
     }
 
     /// <summary>
     /// Writes every field of the reference and, if given, replaces its tags. All
-    /// or nothing. False if the reference no longer exists.
+    /// or nothing. False if the reference no longer exists. Background work,
+    /// such as fetching link details, passes <paramref name="userEdit"/> false so
+    /// the project's last updated date stays as it is.
     /// </summary>
-    public bool UpdateReference(Reference reference, IEnumerable<string>? tagNames = null)
+    public bool UpdateReference(Reference reference, IEnumerable<string>? tagNames = null, bool userEdit = true)
     {
         using var transaction = _connection.BeginTransaction();
         if (!ReferencesTable.Update(_connection, reference, transaction)) return false;
         if (tagNames is not null) SetTags(transaction, reference.Id, tagNames);
+        if (userEdit) TouchProjects(transaction, [reference.ProjectId]);
         transaction.Commit();
         return true;
     }
@@ -184,6 +199,7 @@ public sealed partial class LibraryStore
     {
         var assets = new List<string>();
         using var transaction = _connection.BeginTransaction();
+        TouchReferenceProjects(transaction, referenceIds);
         foreach (var id in referenceIds)
         {
             using var command = _connection.CreateCommand();
@@ -204,8 +220,12 @@ public sealed partial class LibraryStore
         transaction.Commit();
     }
 
+    /// <summary>Writes the reference's row, as moving it does. The caller marks the projects.</summary>
     public bool UpdateReferenceRow(Reference reference, SqliteTransaction transaction) =>
         ReferencesTable.Update(_connection, reference, transaction);
+
+    /// <summary>Marks projects as updated now, inside a transaction the caller runs.</summary>
+    public void TouchProjectsIn(SqliteTransaction transaction, IEnumerable<string?> projectIds) => TouchProjects(transaction, projectIds);
 
     /// <summary>
     /// Saves a copy of a reference: its row and moments as given, the original's

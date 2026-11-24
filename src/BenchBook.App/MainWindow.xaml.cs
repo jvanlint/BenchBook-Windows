@@ -19,6 +19,7 @@ public sealed partial class MainWindow : Window
     private readonly AppServices _services;
     private RestoreOutcome? _outcome;
     private List<Project> _projects = [];
+    private ILookup<string, Kit> _kits = Array.Empty<Kit>().ToLookup(k => k.Id);
     private bool _rebuilding;
     private bool _showAllTags;
     private bool _sidebarStale;
@@ -55,6 +56,7 @@ public sealed partial class MainWindow : Window
             _searchIndex = null;
             // Rebuilding the sidebar moves the focus, which would bring this window in front of a viewer.
             if (!_services.MainWindowActive) { _sidebarStale = true; return; }
+            ReorderProjects();
             UpdateTags();
             UpdateShoppingCount();
         });
@@ -64,6 +66,7 @@ public sealed partial class MainWindow : Window
             if (active && _sidebarStale)
             {
                 _sidebarStale = false;
+                ReorderProjects();
                 UpdateTags();
                 UpdateShoppingCount();
             }
@@ -72,6 +75,8 @@ public sealed partial class MainWindow : Window
             if (active) App.Inbox?.Import();
         };
         services.ShowProject = ShowProject;
+        services.ShowKit = ShowKit;
+        services.NewProjectFromKit = kit => _ = NewProject(kit.Name, new[] { kit });
 
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_search, "Search everything");
         _search.TextChanged += Search_TextChanged;
@@ -99,7 +104,8 @@ public sealed partial class MainWindow : Window
     private void BuildSidebar(string? select)
     {
         _projects = _services.WithStore(s => s.Projects());
-        _projects.Sort((a, b) => NaturalComparer.Instance.Compare(a.Name, b.Name));
+        _kits = Words.KitsByProject(_services);
+        _projects = BenchBook.Core.Projects.ProjectSort.Sorted(_projects, _services.Settings.ProjectSort);
         var visible = _projects.Where(p => StatusFilter is null || (p.Status ?? ProjectStatus.Researching) == StatusFilter).ToList();
 
         _rebuilding = true;
@@ -118,6 +124,7 @@ public sealed partial class MainWindow : Window
             Navigation.MenuItems.Add(NoMatchingProjects());
 
         Navigation.MenuItems.Add(new NavigationViewItemHeader { Content = "Library" });
+        Navigation.MenuItems.Add(Item("Kits", "\uE7B8", "kits"));
         Navigation.MenuItems.Add(Item("Paints", "\uE790", "paints"));
         Navigation.MenuItems.Add(Item("Shopping List", "\uE7BF", "shopping"));
         Navigation.MenuItems.Add(Item("Tags", "\uE8EC", "tags"));
@@ -167,7 +174,21 @@ public sealed partial class MainWindow : Window
             option.Click += (_, _) => SetStatusFilter(status);
             menu.Items.Add(option);
         }
-        var filter = SmallButton(StatusFilter is null ? "\uE71C" : "\uE16E", "Show projects by status");
+        menu.Items.Add(new MenuFlyoutSeparator());
+        var sortBy = new MenuFlyoutSubItem { Text = "Sort By" };
+        foreach (var sort in BenchBook.Core.Projects.ProjectSort.All)
+        {
+            var option = new RadioMenuFlyoutItem
+            {
+                Text = BenchBook.Core.Projects.ProjectSort.Shown(sort),
+                GroupName = "sort",
+                IsChecked = _services.Settings.ProjectSort == sort,
+            };
+            option.Click += (_, _) => SetProjectSort(sort);
+            sortBy.Items.Add(option);
+        }
+        menu.Items.Add(sortBy);
+        var filter = SmallButton(StatusFilter is null ? "\uE71C" : "\uE16E", "Show projects by status, and sort them");
         AutomationName(filter, "Filter Projects by Status");
         filter.Flyout = menu;
         Grid.SetColumn(filter, 1);
@@ -204,7 +225,7 @@ public sealed partial class MainWindow : Window
         content.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(0, 4, 0, 4) };
         text.Children.Add(new TextBlock { Text = project.Name, TextTrimming = TextTrimming.CharacterEllipsis });
-        var summary = Words.ProjectSummary(project);
+        var summary = Words.ProjectSummary(project, _kits[project.Id].ToList());
         if (summary.Length > 0)
             text.Children.Add(new TextBlock
             {
@@ -438,9 +459,26 @@ public sealed partial class MainWindow : Window
     private void UpdateShoppingCount()
     {
         if (Navigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => i.Tag as string == "shopping") is not { } item) return;
-        var count = _services.WithStore(s => new BenchBook.Core.Paints.ShoppingList(s).PaintCount);
+        // Paints to buy and needed kits.
+        var count = _services.WithStore(s => new BenchBook.Core.Paints.ShoppingList(s).BadgeCount);
         item.InfoBadge = count > 0 ? new InfoBadge { Value = count } : null;
-        AutomationName(item, count > 0 ? $"Shopping List, {count:N0} {(count == 1 ? "paint" : "paints")} to buy" : "Shopping List");
+        AutomationName(item, count > 0 ? $"Shopping List, {count:N0} {(count == 1 ? "thing" : "things")} to buy" : "Shopping List");
+    }
+
+    private string? _kitToShow;
+
+    /// <summary>Shows a kit on the Kits screen, e.g. from a project's Kits tab.</summary>
+    private void ShowKit(string kitId)
+    {
+        EndSearch();
+        if (Navigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => i.Tag as string == "kits") is not { } item) return;
+        if (ReferenceEquals(Navigation.SelectedItem, item))
+        {
+            ContentFrame.Content = new KitsPage(_services, kitId);
+            return;
+        }
+        _kitToShow = kitId;
+        Navigation.SelectedItem = item;
     }
 
     /// <summary>Shows a paint in the catalogue, e.g. from the shopping list.</summary>
@@ -604,6 +642,37 @@ public sealed partial class MainWindow : Window
     private static NavigationViewItem Item(string title, string glyph, string tag) =>
         new() { Content = title, Tag = tag, Icon = new FontIcon { Glyph = glyph } };
 
+    private void SetProjectSort(string sort)
+    {
+        _services.Settings.ProjectSort = sort;
+        _services.SaveSettings();
+        var current = (Navigation.SelectedItem as NavigationViewItem)?.Tag as Project;
+        BuildSidebar(current?.Id);
+    }
+
+    /// <summary>
+    /// Sorted by Last Updated, an edit can move a project up the list. Moves
+    /// the items into the new order without rebuilding the sidebar, keeping the
+    /// selection.
+    /// </summary>
+    private void ReorderProjects()
+    {
+        if (_services.Settings.ProjectSort != BenchBook.Core.Projects.ProjectSort.LastUpdated) return;
+        var items = Navigation.MenuItems.OfType<NavigationViewItem>().Where(i => i.Tag is Project).ToList();
+        if (items.Count < 2) return;
+        var fresh = _services.WithStore(s => s.Projects()).ToDictionary(p => p.Id, Ids.Comparer);
+        var dates = items.ToDictionary(i => i, i => fresh.TryGetValue(((Project)i.Tag).Id, out var p) ? p.UpdatedAt : ((Project)i.Tag).UpdatedAt);
+        var sorted = items.OrderByDescending(i => dates[i]).ThenBy(i => ((Project)i.Tag).Name, NaturalComparer.Instance).ToList();
+        if (sorted.SequenceEqual(items)) return;
+        var selected = Navigation.SelectedItem;
+        var start = Navigation.MenuItems.IndexOf(items[0]);
+        _rebuilding = true;
+        foreach (var item in items) Navigation.MenuItems.Remove(item);
+        for (var i = 0; i < sorted.Count; i++) Navigation.MenuItems.Insert(start + i, sorted[i]);
+        if (selected is not null) Navigation.SelectedItem = selected;
+        _rebuilding = false;
+    }
+
     private void SetStatusFilter(string? status)
     {
         _services.Settings.ProjectStatusFilter = status;
@@ -637,6 +706,10 @@ public sealed partial class MainWindow : Window
                 // The share window starts with the project last open here.
                 App.Inbox?.PublishProjects(project.Id);
                 break;
+            case "kits":
+                ContentFrame.Content = new KitsPage(_services, _kitToShow);
+                _kitToShow = null;
+                break;
             case "paints":
                 ContentFrame.Content = new PaintsPage(_services, _paintToShow);
                 _paintToShow = null;
@@ -664,10 +737,12 @@ public sealed partial class MainWindow : Window
         await NewProject();
     }
 
-    private async Task NewProject()
+    /// <param name="name">For New Project from Kit…: the kit's name.</param>
+    /// <param name="kits">The kits it starts with.</param>
+    private async Task NewProject(string? name = null, IReadOnlyList<Kit>? kits = null)
     {
-        var dialog = new ProjectEditorDialog(_services, null) { XamlRoot = Content.XamlRoot };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary || dialog.Saved is not { } project) return;
+        var dialog = new ProjectEditorDialog(_services, null, name, kits) { XamlRoot = Content.XamlRoot };
+        if (await dialog.RunAsync() is not { } project) return;
         // A new project that the filter would hide shows all projects instead.
         if (StatusFilter is not null && project.Status != StatusFilter)
         {

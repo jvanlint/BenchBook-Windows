@@ -24,6 +24,10 @@ public sealed partial class LibraryStore : IDisposable
     private static readonly TableMap<OwnedPaint> OwnedPaintsTable = new("owned_paints");
     private static readonly TableMap<ProjectPaint> ProjectPaintsTable = new("project_paints");
     private static readonly TableMap<AftermarketItem> AftermarketTable = new("aftermarket_items");
+    private static readonly TableMap<PaintMixPart> PaintMixPartsTable = new("paint_mix_parts");
+    private static readonly TableMap<BuildPhoto> BuildPhotosTable = new("build_photos");
+    private static readonly TableMap<BuildPhotoTag> BuildPhotoTagsTable = new("build_photo_tags");
+    private static readonly TableMap<Kit> KitsTable = new("kits");
 
     private readonly SqliteConnection _connection;
 
@@ -37,8 +41,9 @@ public sealed partial class LibraryStore : IDisposable
 
     /// <summary>
     /// Opens the store, creating it if there's none, and runs any migrations.
-    /// The store file is backed up before a migration runs. If anything goes
-    /// wrong, the store is left as it was and a <see cref="StoreOpenException"/> says why.
+    /// An existing store is copied first, as "BenchBook Before 6.0.0.db" beside
+    /// it. If anything goes wrong, the store is left as it was and a
+    /// <see cref="StoreOpenException"/> says why.
     /// </summary>
     public static LibraryStore Open(string path)
     {
@@ -51,7 +56,7 @@ public sealed partial class LibraryStore : IDisposable
             if (version > Migrations.Latest)
                 throw new StoreOpenException("This library was made by a newer version of BenchBook. Update BenchBook, then open it again.");
             if (version > 0 && version < Migrations.Latest)
-                BackUpBeforeMigration(connection, path, version);
+                CopyBeforeUpgrade(connection, path);
             Migrate(connection, version);
             return new LibraryStore(connection, path);
         }
@@ -104,22 +109,64 @@ public sealed partial class LibraryStore : IDisposable
         for (var step = (int)from; step < Migrations.Latest; step++)
         {
             using var transaction = connection.BeginTransaction();
-            Execute(connection, Migrations.Steps[step], transaction);
+            Execute(connection, Migrations.Steps[step].Sql, transaction);
+            Migrations.Steps[step].Code?.Invoke(connection, transaction);
             Execute(connection, $"PRAGMA user_version = {step + 1}", transaction);
+            // Every link must still hold, or nothing of the step is kept.
+            if (HasForeignKeyProblems(connection, transaction))
+                throw new StoreOpenException("Your library couldn't be upgraded, as some of its records don't fit together. It hasn't been changed.");
             transaction.Commit();
         }
     }
 
-    /// <summary>e.g. "BenchBook Before Upgrade 2026-11-13 09.41.07.db", beside the store.</summary>
-    private static void BackUpBeforeMigration(SqliteConnection connection, string path, long version)
+    /// <summary>
+    /// Copies the store beside it as e.g. "BenchBook Before 6.0.0.db", made in a
+    /// hidden folder first so a failed copy never leaves part of one. An existing
+    /// copy is kept: it's from before the first try. SQLite's backup gives one
+    /// consistent file, so there are no -wal or -shm files to copy. If the copy
+    /// fails, the store isn't upgraded (library-format.md, "The library on disk").
+    /// </summary>
+    private static void CopyBeforeUpgrade(SqliteConnection connection, string path)
     {
-        var stamp = DateTime.Now.ToString("yyyy-MM-dd HH.mm.ss", CultureInfo.InvariantCulture);
         var folder = System.IO.Path.GetDirectoryName(path)!;
         var name = System.IO.Path.GetFileNameWithoutExtension(path);
-        var copy = System.IO.Path.Combine(folder, $"{name} Before Upgrade {stamp} (v{version}).db");
-        using var destination = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = copy, Pooling = false }.ToString());
-        destination.Open();
-        connection.BackupDatabase(destination);
+        var copy = UpgradeCopyPath(path);
+        if (File.Exists(copy)) return;
+        var staging = System.IO.Path.Combine(folder, ".upgrade-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(staging);
+            var staged = System.IO.Path.Combine(staging, name + ".db");
+            using (var destination = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = staged, Pooling = false }.ToString()))
+            {
+                destination.Open();
+                connection.BackupDatabase(destination);
+            }
+            File.Move(staged, copy);
+        }
+        catch (Exception error) when (error is SqliteException or IOException or UnauthorizedAccessException)
+        {
+            throw new StoreOpenException($"Your library needs an upgrade, but it couldn't be copied first, so it hasn't been changed. {error.Message}", error);
+        }
+        finally
+        {
+            try { if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+        }
+    }
+
+    /// <summary>e.g. "BenchBook Before 6.0.0.db", beside the store.</summary>
+    public static string UpgradeCopyPath(string storePath) =>
+        System.IO.Path.Combine(System.IO.Path.GetDirectoryName(storePath)!,
+            $"{System.IO.Path.GetFileNameWithoutExtension(storePath)} Before {Migrations.Steps[^1].SchemaVersion}{System.IO.Path.GetExtension(storePath)}");
+
+    private static bool HasForeignKeyProblems(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "PRAGMA foreign_key_check";
+        using var reader = command.ExecuteReader();
+        return reader.Read();
     }
 
     // MARK: Snapshots
@@ -141,6 +188,10 @@ public sealed partial class LibraryStore : IDisposable
             OwnedPaints = OwnedPaintsTable.ReadAll(_connection, transaction),
             ProjectPaints = ProjectPaintsTable.ReadAll(_connection, transaction),
             AftermarketItems = AftermarketTable.ReadAll(_connection, transaction),
+            PaintMixParts = PaintMixPartsTable.ReadAll(_connection, transaction),
+            BuildPhotos = BuildPhotosTable.ReadAll(_connection, transaction),
+            BuildPhotoTags = BuildPhotoTagsTable.ReadAll(_connection, transaction),
+            Kits = KitsTable.ReadAll(_connection, transaction),
         };
         transaction.Commit();
         return snapshot;
@@ -158,11 +209,15 @@ public sealed partial class LibraryStore : IDisposable
         TagsTable.InsertAll(_connection, transaction, snapshot.Tags);
         ReferenceTagsTable.InsertAll(_connection, transaction, snapshot.ReferenceTags);
         VideoMomentsTable.InsertAll(_connection, transaction, snapshot.VideoMoments);
+        BuildPhotosTable.InsertAll(_connection, transaction, snapshot.BuildPhotos);
+        BuildPhotoTagsTable.InsertAll(_connection, transaction, snapshot.BuildPhotoTags);
         MarkupsTable.InsertAll(_connection, transaction, snapshot.Markups);
         PaintsTable.InsertAll(_connection, transaction, snapshot.Paints);
         OwnedPaintsTable.InsertAll(_connection, transaction, snapshot.OwnedPaints);
+        PaintMixPartsTable.InsertAll(_connection, transaction, snapshot.PaintMixParts);
         ProjectPaintsTable.InsertAll(_connection, transaction, snapshot.ProjectPaints);
         AftermarketTable.InsertAll(_connection, transaction, snapshot.AftermarketItems);
+        KitsTable.InsertAll(_connection, transaction, snapshot.Kits);
         transaction.Commit();
     }
 
@@ -179,10 +234,15 @@ public sealed partial class LibraryStore : IDisposable
 
     public HashSet<string> ReferenceIds() => Strings("SELECT id FROM reference_items");
 
-    /// <summary>Assets that no reference and no aftermarket item points to.</summary>
+    /// <summary>Assets that no reference, aftermarket item, build photo or kit points to.</summary>
     public List<Asset> UnusedAssets()
     {
-        var used = Strings("SELECT assetId FROM reference_items WHERE assetId IS NOT NULL UNION SELECT imageAssetId FROM aftermarket_items WHERE imageAssetId IS NOT NULL");
+        var used = Strings("""
+            SELECT assetId FROM reference_items WHERE assetId IS NOT NULL
+            UNION SELECT imageAssetId FROM aftermarket_items WHERE imageAssetId IS NOT NULL
+            UNION SELECT assetId FROM build_photos
+            UNION SELECT pictureAssetId FROM kits WHERE pictureAssetId IS NOT NULL
+            """);
         return AssetsTable.ReadAll(_connection, null).Where(a => !used.Contains(a.Id)).ToList();
     }
 
@@ -194,6 +254,8 @@ public sealed partial class LibraryStore : IDisposable
             DELETE FROM assets WHERE id = $id
               AND NOT EXISTS (SELECT 1 FROM reference_items WHERE assetId = $id)
               AND NOT EXISTS (SELECT 1 FROM aftermarket_items WHERE imageAssetId = $id)
+              AND NOT EXISTS (SELECT 1 FROM build_photos WHERE assetId = $id)
+              AND NOT EXISTS (SELECT 1 FROM kits WHERE pictureAssetId = $id)
             """;
         command.Parameters.AddWithValue("$id", assetId);
         return command.ExecuteNonQuery() == 1;

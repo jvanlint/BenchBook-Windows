@@ -16,6 +16,10 @@ public sealed class AppSettings
     public string NewProjectStatus { get; set; } = ProjectStatus.Researching;
     /// <summary>The sidebar's status filter; null shows every project.</summary>
     public string? ProjectStatusFilter { get; set; }
+    /// <summary>How the sidebar sorts projects: name, dateCreated or lastUpdated.</summary>
+    public string ProjectSort { get; set; } = Projects.ProjectSort.Name;
+    /// <summary>Columns hidden on the Kits screen, by key.</summary>
+    public List<string> HiddenKitColumns { get; set; } = [];
     public DateTimeOffset? LastBackup { get; set; }
     /// <summary>Each viewer's last size and position: x, y, width, height.</summary>
     public Dictionary<string, int[]> WindowFrames { get; set; } = [];

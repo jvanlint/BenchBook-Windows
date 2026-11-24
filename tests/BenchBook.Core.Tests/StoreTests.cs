@@ -39,10 +39,16 @@ public class StoreTests
         Assert.Empty(after.Markups);
         Assert.Empty(after.ProjectPaints);
         Assert.Empty(after.AftermarketItems);
-        Assert.Single(after.Paints);
+        Assert.Empty(after.BuildPhotos);
+        Assert.Empty(after.BuildPhotoTags);
+        // Kits stay in the catalogue, in no project; mixes and their recipes stay.
+        Assert.Equal(2, after.Kits.Count);
+        Assert.All(after.Kits, k => Assert.Null(k.ProjectId));
+        Assert.Equal(3, after.Paints.Count);
+        Assert.Equal(2, after.PaintMixParts.Count);
         Assert.Single(after.Tags);
         Assert.Single(after.OwnedPaints);
-        Assert.Equal(3, after.Assets.Count);
+        Assert.Equal(5, after.Assets.Count);
     }
 
     [Fact]

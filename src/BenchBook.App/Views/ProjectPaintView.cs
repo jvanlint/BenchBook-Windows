@@ -155,7 +155,7 @@ internal sealed partial class ProjectPaintView : UserControl
         }
 
         // The colour and "used for" are edited in place and saved when you leave the field.
-        var standard = new TextBox { Text = row.Standard ?? "", PlaceholderText = "e.g. FS 36270" };
+        var standard = new TextBox { Text = row.GuideStandard?.DisplayText ?? "", PlaceholderText = "e.g. FS 36270" };
         var usedFor = new TextBox { Text = row.UsedFor ?? "", PlaceholderText = "e.g. upper surfaces" };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(standard, "Colour");
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(usedFor, "Used For");
@@ -182,7 +182,7 @@ internal sealed partial class ProjectPaintView : UserControl
             };
             TableRows.Cell(grid, owned, 4);
         }
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(grid, paint is null ? $"{row.Standard ?? "Colour"}, no paint chosen" : PaintText.DisplayName(paint));
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(grid, paint is null ? $"{row.GuideStandard?.DisplayText ?? "Colour"}, no paint chosen" : PaintText.DisplayName(paint));
     }
 
     private List<ProjectPaint> Selected() => _list.SelectedItems.OfType<ProjectPaint>().ToList();
@@ -263,12 +263,12 @@ internal sealed partial class ProjectPaintView : UserControl
 
     private async Task Choose(ProjectPaint row)
     {
-        var picker = new PaintPickerDialog(_services, _project, row.Standard, forColour: true) { XamlRoot = XamlRoot };
+        var picker = new PaintPickerDialog(_services, _project, row.GuideStandard, forColour: true) { XamlRoot = XamlRoot };
         await picker.ShowAsync();
         var paint = picker.Result switch
         {
             PaintPickerDialog.PickerResult.Picked => picker.Chosen.FirstOrDefault(),
-            PaintPickerDialog.PickerResult.NewPaint => await NewPaint(row.Standard),
+            PaintPickerDialog.PickerResult.NewPaint => await NewPaint(row.GuideStandard?.DisplayText),
             _ => null,
         };
         if (paint is null) return;

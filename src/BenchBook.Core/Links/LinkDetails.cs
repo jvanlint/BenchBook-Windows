@@ -93,7 +93,7 @@ public sealed class LinkDetails(IStoreAccess store, LibraryLocation location, Li
         if (s.Reference(referenceId) is not { } current) return false;
         change(current);
         current.UpdatedAt = IsoDate.Now();
-        return s.UpdateReference(current);
+        return s.UpdateReference(current, userEdit: false);
     });
 
     private static void StorePoster(string path, byte[] data)

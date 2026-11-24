@@ -63,7 +63,8 @@ public class MaintenanceTests
         var before = LibraryMaintenance.MeasureUsage(library.Location);
         Assert.Equal(100, before.Thumbnails);
         Assert.Equal(Sample.PosterBytes.Length, before.Posters);
-        Assert.Equal(2 * Sample.JpegBytes.Length + Sample.PdfBytes.Length, before.Originals);
+        // Three JPEGs, the PDF and the kit's box art.
+        Assert.Equal(3 * Sample.JpegBytes.Length + Sample.PdfBytes.Length + Sample.PosterBytes.Length, before.Originals);
 
         LibraryMaintenance.ClearThumbnails(library.Location);
         var after = LibraryMaintenance.MeasureUsage(library.Location);

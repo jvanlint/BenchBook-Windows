@@ -96,6 +96,9 @@ internal sealed class TableMap<T> where T : LibraryRecord
         null => DBNull.Value,
         DateTimeOffset date => IsoDate.Write(date),
         double[] points => JsonSerializer.Serialize(points),
+        bool flag => flag ? 1L : 0L,
+        // Money as text with two decimals, e.g. "18.50", so it's never rounded.
+        decimal amount => Money.Write(amount),
         _ => value,
     };
 
@@ -109,6 +112,8 @@ internal sealed class TableMap<T> where T : LibraryRecord
         if (target == typeof(int)) return reader.GetInt32(index);
         if (target == typeof(long)) return reader.GetInt64(index);
         if (target == typeof(double[])) return JsonSerializer.Deserialize<double[]>(reader.GetString(index)) ?? [];
+        if (target == typeof(bool)) return reader.GetInt64(index) != 0;
+        if (target == typeof(decimal)) return Money.TryRead(reader.GetString(index), out var amount) ? amount : null;
         throw new NotSupportedException($"No column mapping for {type}.");
     }
 }

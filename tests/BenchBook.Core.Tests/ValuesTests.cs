@@ -28,7 +28,9 @@ public class ValuesTests
     [InlineData("2026-11-13T09:41:07.250Z", "2026-11-13T09:41:07.250Z")]
     [InlineData("2026-11-13T09:41:07Z", "2026-11-13T09:41:07.000Z")]
     [InlineData("2026-11-13T19:41:07.250+10:00", "2026-11-13T09:41:07.250Z")]
-    [InlineData("2026-11-13T09:41:07.2509Z", "2026-11-13T09:41:07.250Z")]
+    // Rounded to the nearest millisecond (library-format.md, "Value types").
+    [InlineData("2026-11-13T09:41:07.2509Z", "2026-11-13T09:41:07.251Z")]
+    [InlineData("2026-11-13T09:41:07.2504Z", "2026-11-13T09:41:07.250Z")]
     public void DatesAreReadFromIso8601(string text, string expected)
     {
         Assert.True(IsoDate.TryRead(text, out var date));

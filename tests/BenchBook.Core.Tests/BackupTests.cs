@@ -21,7 +21,7 @@ public class BackupTests
 
         Assert.Equal(1, manifest.Counts.Projects);
         Assert.Equal(4, manifest.Counts.References);
-        Assert.Equal(1, manifest.Counts.Paints);
+        Assert.Equal(3, manifest.Counts.Paints);
         Assert.Equal("windows", manifest.Platform);
 
         using var to = new TestLibrary();
@@ -106,7 +106,7 @@ public class BackupTests
         using var manifest = JsonDocument.Parse(manifestStream);
         var root = manifest.RootElement;
         Assert.Equal(2, root.GetProperty("format").GetInt32());
-        Assert.Equal("1.0.0", root.GetProperty("schemaVersion").GetString());
+        Assert.Equal("6.0.0", root.GetProperty("schemaVersion").GetString());
         Assert.Matches(@"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$", root.GetProperty("createdAt").GetString());
         var files = root.GetProperty("files").EnumerateArray().ToList();
         Assert.Equal(zip.Entries.Count - 1, files.Count);
@@ -179,8 +179,9 @@ public class BackupTests
     public void ANewerMinorSchemaIsFlaggedAndANewerMajorIsRefused()
     {
         Assert.False(LibraryRestore.CheckSchemaVersion("1.0.0"));
-        Assert.True(LibraryRestore.CheckSchemaVersion("1.1.0"));
-        Assert.Contains("newer version", Assert.Throws<BackupException>(() => LibraryRestore.CheckSchemaVersion("2.0.0")).Message);
+        Assert.False(LibraryRestore.CheckSchemaVersion("6.0.0"));
+        Assert.True(LibraryRestore.CheckSchemaVersion("6.1.0"));
+        Assert.Contains("newer version", Assert.Throws<BackupException>(() => LibraryRestore.CheckSchemaVersion("7.0.0")).Message);
         Assert.Throws<BackupException>(() => LibraryRestore.CheckSchemaVersion("one"));
     }
 

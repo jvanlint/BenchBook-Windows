@@ -59,10 +59,11 @@ internal sealed class ShareInbox : IDisposable
         try
         {
             var projects = _services.WithStore(s => s.Projects());
+            var kits = Words.KitsByProject(_services);
             projects.Sort((a, b) => NaturalComparer.Instance.Compare(a.Name, b.Name));
             var directory = new ShareDirectory
             {
-                Projects = projects.Select(p => new ShareProject(p.Id, p.Name, Words.ProjectSummary(p))).ToList(),
+                Projects = projects.Select(p => new ShareProject(p.Id, p.Name, Words.ProjectSummary(p, kits[p.Id].ToList()))).ToList(),
                 // The share window records the project last shared to in the same file.
                 ActiveProjectId = activeProjectId ?? ShareDirectory.Load(_services.Location.ShareProjectsPath).ActiveProjectId,
             };

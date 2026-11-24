@@ -109,6 +109,12 @@ public sealed class AppServices : IDisposable, IStoreAccess
     /// <summary>Selects a project in the main window. Set by the window.</summary>
     public Action<string>? ShowProject { get; set; }
 
+    /// <summary>Shows a kit on the Kits screen. Set by the window.</summary>
+    public Action<string>? ShowKit { get; set; }
+
+    /// <summary>Opens the new-project sheet named after the kit, with the kit chosen. Set by the window.</summary>
+    public Action<BenchBook.Core.Model.Kit>? NewProjectFromKit { get; set; }
+
     /// <summary>Runs work on the store, one piece at a time, since a connection isn't thread-safe.</summary>
     public T WithStore<T>(Func<LibraryStore, T> work)
     {

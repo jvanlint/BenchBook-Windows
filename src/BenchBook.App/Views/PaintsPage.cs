@@ -159,7 +159,7 @@ internal sealed partial class PaintsPage : Page
             "range" => p => p.Range,
             "code" => p => p.Code,
             "name" => p => p.Name,
-            "standard" => p => p.StandardCode,
+            "standard" => p => p.Standard?.DisplayText ?? "",
             _ => p => p.Brand,
         };
         // Ties fall back to brand, then code.
@@ -229,7 +229,7 @@ internal sealed partial class PaintsPage : Page
         TableRows.Cell(grid, TableRows.Text(paint.Range, secondary: true), 2);
         TableRows.Cell(grid, TableRows.Text(paint.Code), 3);
         TableRows.Cell(grid, TableRows.Text(paint.Name), 4);
-        TableRows.Cell(grid, TableRows.Text(paint.StandardCode, secondary: true), 5);
+        TableRows.Cell(grid, TableRows.Text(paint.Standard?.DisplayText ?? "", secondary: true), 5);
         var owned = new CheckBox { IsChecked = _owned.Contains(paint.Id), MinWidth = 0, Padding = new Thickness(0) };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(owned, $"Owned: {PaintText.DisplayName(paint)}");
         ToolTipService.SetToolTip(owned, _owned.Contains(paint.Id) ? "You own this paint" : "You don't own this paint yet");
@@ -332,11 +332,18 @@ internal sealed partial class PaintsPage : Page
             return;
         }
         Changed();
-        var lines = new List<string>();
-        if (summary.Duplicates > 0) lines.Add($"{summary.Duplicates:N0} {(summary.Duplicates == 1 ? "was" : "were")} already in your catalogue and {(summary.Duplicates == 1 ? "was" : "were")} skipped.");
+        // As on the Mac (screens.md, "Paints catalogue").
+        static string Count(int n, string one, string many) => $"{n:N0} {(n == 1 ? one : many)}";
+        var lines = new List<string>
+        {
+            $"{Count(summary.Added, "new paint", "new paints")} added.",
+            $"{Count(summary.Updated, "paint", "paints")} in your catalogue updated.",
+        };
+        if (summary.UpToDate > 0) lines.Add($"{Count(summary.UpToDate, "paint", "paints")} already up to date.");
+        if (summary.Repeated > 0) lines.Add($"{Count(summary.Repeated, "row", "rows")} repeated a paint earlier in the file and skipped.");
         lines.AddRange(summary.Problems.Take(10));
         if (summary.Problems.Count > 10) lines.Add($"…and {summary.Problems.Count - 10:N0} more problems.");
-        await ReferenceActions.Message(XamlRoot, $"Imported {summary.Added:N0} {(summary.Added == 1 ? "Paint" : "Paints")}", string.Join("\n", lines));
+        await ReferenceActions.Message(XamlRoot, "Imported Paints", string.Join("\n", lines));
     }
 
     /// <summary>UTF-8, or Latin-1 when the file isn't valid UTF-8 (some spreadsheets save that way).</summary>

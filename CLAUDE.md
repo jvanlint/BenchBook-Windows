@@ -102,8 +102,9 @@ tests\BenchBook.Pdf.Tests\  PDF tests, on PDFs made with PDFium itself
   from the record properties (`Store\TableMap.cs`). Schema changes are new
   numbered steps in `Store\Migrations.cs`; never edit a released step.
 - The app icons in `Assets\` are made from the Mac icon
-  (`..\BenchBook\BenchBook\Assets.xcassets\AppIcon.appiconset`) at each scale
-  and target size, with `BenchBook.ico` for the windows and the `.exe`. A
+  (`..\BenchBook\BenchBook\Assets.xcassets\AppIcon.appiconset\BenchBook-1024.png`)
+  at each scale and target size, with its square drawn with rounded corners
+  (18% of the side), and `BenchBook.ico` for the windows and the `.exe`. A
   changed manifest needs a higher package version before
   `Add-AppxPackage -Register` accepts it.
 - Sharing: choosing BenchBook in the Windows share sheet starts a second
@@ -112,6 +113,44 @@ tests\BenchBook.Pdf.Tests\  PDF tests, on PDFs made with PDFium itself
   app) and commits an envelope folder to `%LOCALAPPDATA%\BenchBook\Inbox\`, as
   the Mac's `CaptureEnvelope` does. The running app (`Share\ShareInbox`) imports
   envelopes at launch and as they arrive.
+
+## Catching up with the Mac
+
+`..\BenchBook\spec\changes.md` lists what the Mac has gained since 1.0. Note
+here what's been brought across (the spec asks for it to be noted in the
+Windows project, not there). As of Mac 1.3.0 (`9c68bc9`, 2026-11-24):
+
+- **Done:** library schema 6.0.0 in the store, backups and restore: build
+  photos and their tags and notes, kits, kits in projects (project
+  manufacturer, scale and kit number moved into the notes), paint standards
+  as a system and a code with match and type, and mixes with recipes.
+  Older stores are copied to `BenchBook Before 6.0.0.db` and upgraded by
+  migration step 2; older backups are upgraded as they're read
+  (`Model\SchemaUpgrades.cs`). Dates round to the millisecond.
+- **Done:** paint CSV with Standard, Standard Code, Match and Type columns,
+  and re-import updating paints already in the catalogue (#24). The paint
+  editor has Type, Standard, Standard Code and Match. The paint picker lists
+  paints with the colour's standard first. The project summary comes from
+  its kits. A tag only build photos use isn't unused.
+- **Done:** the "last updated" rule for every edit (`Store\LibraryStore.Activity.cs`;
+  link details pass `userEdit: false`), and sorting projects in the
+  sidebar (Name, Date Created, Last Updated, remembered in Settings).
+- **Done:** Kits (`Core\Kits\`): the Kits catalogue with its filters, hidden
+  columns and CSV import (Scalemates and BenchBook) and export, the kit
+  editor (the picture well is shared with the aftermarket editor,
+  `Views\PictureWell.cs`), a project's Kits tab (Ctrl+1; References,
+  Paint and Aftermarket move to Ctrl+2 to Ctrl+4), Add Kits to…, kits in
+  the new-project sheet and New Project from Kit…, status following the
+  project, needed kits and mix recipe paints on the Shopping List, and kits
+  in Search.
+- **Not yet:** the Build Photos tab (and Ctrl+5), mixes in the paint editor
+  and catalogue (Add Mix, recipes, a mix's Owned box), the Paints screen's
+  Match and Type columns and Type filter (and the picker's), Import ▸
+  Import from Scalemates… for paints, a project Paint tab's Notes column,
+  clear paints drawn as glass, project export and import
+  (`.benchbookproject`), the safety changes to link previews and restore
+  (#15), one link per project (#7), and PDF markup badges kept on the page
+  (#39).
 
 ## Releasing
 

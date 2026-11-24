@@ -22,19 +22,28 @@ internal sealed class PaintPickerDialog : ContentDialog
     private readonly ListView _list;
     private readonly StackPanel _empty = new() { Spacing = 6, Margin = new Thickness(0, 24, 0, 24) };
 
-    /// <param name="standard">When choosing for a colour, its standard: only one paint can be chosen.</param>
-    public PaintPickerDialog(AppServices services, Project project, string? standard, bool forColour)
+    /// <param name="guide">When choosing for a colour, its standard, if it has one.</param>
+    /// <param name="forColour">Choosing for a colour: only one paint can be chosen.</param>
+    public PaintPickerDialog(AppServices services, Project project, PaintStandard? guide, bool forColour)
     {
         _choosing = forColour;
         var (paints, owned, rows) = services.WithStore(s => (s.Paints(), s.OwnedPaintIds(), s.ProjectPaints(project.Id)));
         var inProject = rows.Where(r => r.PaintId is not null).Select(r => r.PaintId!).ToHashSet(Ids.Comparer);
         _owned = owned;
-        _paints = PaintService.Sorted(paints.Where(p => !inProject.Contains(p.Id)))
-            // When choosing for a colour, paints you own come first.
-            .OrderBy(p => forColour && !owned.Contains(p.Id) ? 1 : 0)
-            .ToList();
+        // When choosing for a colour, paints with its standard come first, best
+        // match first, then paints you own; brand and code order within each
+        // (PaintPickerView.swift). OrderBy keeps the earlier order for ties.
+        (int, int) Rank(Paint paint)
+        {
+            var follows = guide is not null && paint.Standard?.MatchKey == guide.MatchKey;
+            var match = PaintMatch.FromRaw(paint.Match) is { } m ? PaintMatch.All.Count - 1 - PaintMatch.All.ToList().IndexOf(m) : 3;
+            return (follows ? match : 4, owned.Contains(paint.Id) ? 0 : 1);
+        }
+        _paints = PaintService.Sorted(paints.Where(p => !inProject.Contains(p.Id))).ToList();
+        if (forColour) _paints = _paints.OrderBy(Rank).ToList();
         _catalogueEmpty = paints.Count == 0;
 
+        var standard = guide?.DisplayText;
         Title = forColour ? $"Choose Paint for {standard ?? "This Colour"}" : $"Add Paint to {project.Name}";
         PrimaryButtonText = forColour ? "Choose Paint" : "Add Paint";
         SecondaryButtonText = "New Paint…";
