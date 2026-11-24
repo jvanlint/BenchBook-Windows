@@ -103,9 +103,16 @@ public static class PaintText
     public static string DisplayName(Paint paint) =>
         string.Join(" ", new[] { paint.Brand, paint.Code, paint.Name }.Where(s => s.Length > 0));
 
-    /// <summary>Range and colour standard, e.g. "Acrylic XF · FS 36270".</summary>
+    /// <summary>
+    /// Range and colour standard, e.g. "Acrylic XF · FS 36270". A mix's line
+    /// shows its recipe, which needs the catalogue: see <see cref="PaintCatalogue.SecondaryLine"/>.
+    /// </summary>
     public static string SecondaryLine(Paint paint) =>
-        string.Join(" · ", new[] { paint.Range, paint.Standard?.DisplayText ?? "" }.Where(s => s.Length > 0));
+        string.Join(" · ", new[] { paint.IsMix ? "Mix" : paint.Range, paint.Standard?.DisplayText ?? "" }.Where(s => s.Length > 0));
+
+    /// <summary>In a recipe: its code, or its name if it has no code, else its brand.</summary>
+    public static string ShortName(Paint paint) =>
+        paint.Code.Trim() is { Length: > 0 } code ? code : paint.Name.Trim() is { Length: > 0 } name ? name : paint.Brand;
 
     /// <summary>"a", "a and b", or "a, b and c".</summary>
     public static string List(IReadOnlyList<string> items) =>

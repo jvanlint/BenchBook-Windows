@@ -13,7 +13,7 @@ namespace BenchBook.App.Views;
 /// <summary>A project's Paint tab (screens.md, "Paint tab").</summary>
 internal sealed partial class ProjectPaintView : UserControl
 {
-    private static readonly string[] Widths = ["24", "2*", "1*", "1.5*", "60"];
+    private static readonly string[] Widths = ["24", "2*", "140", "1*", "1.2*", "1.2*", "60"];
 
     private readonly AppServices _services;
     private readonly Project _project;
@@ -21,8 +21,7 @@ internal sealed partial class ProjectPaintView : UserControl
     private readonly ListView _list;
     private readonly FrameworkElement _header;
     private readonly StackPanel _empty = new() { Spacing = 10, MaxWidth = 520, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-    private Dictionary<string, Paint> _paints = [];
-    private HashSet<string> _owned = [];
+    private PaintCatalogue _catalogue = new([], [], []);
 
     public ProjectPaintView(AppServices services, Project project)
     {
@@ -34,7 +33,7 @@ internal sealed partial class ProjectPaintView : UserControl
         {
             if (e.Key == Windows.System.VirtualKey.Delete && Selected().Count > 0) { e.Handled = true; await Remove(Selected()); }
         };
-        _header = TableRows.Header(Widths, [("", null), ("Paint", null), ("Colour", null), ("Used For", null), ("Owned", null)], null, true, null);
+        _header = TableRows.Header(Widths, [("", null), ("Paint", null), ("Standard", null), ("Code", null), ("Used For", null), ("Notes", null), ("Owned", null)], null, true, null);
 
         var addColour = new Button { Content = "Add Colour…" };
         ToolTipService.SetToolTip(addColour, "Add a colour from the painting guide, such as FS 36270");
@@ -70,8 +69,8 @@ internal sealed partial class ProjectPaintView : UserControl
     private void Load(string? select = null)
     {
         List<ProjectPaint> rows;
-        (rows, _paints, _owned) = _services.WithStore(s => (s.ProjectPaints(_project.Id), s.Paints().ToDictionary(p => p.Id, Ids.Comparer), s.OwnedPaintIds()));
-        var sorted = PaintService.SortedRows(rows, _paints);
+        (rows, _catalogue) = _services.WithStore(s => (s.ProjectPaints(_project.Id), PaintCatalogue.Load(s)));
+        var sorted = PaintService.SortedRows(rows, _catalogue.ById);
         _list.ItemsSource = sorted;
         if (select is not null && sorted.FirstOrDefault(r => Ids.Comparer.Equals(r.Id, select)) is { } row) _list.ScrollIntoView(row);
         ShowSummary(sorted);
@@ -88,8 +87,10 @@ internal sealed partial class ProjectPaintView : UserControl
     private void ShowSummary(List<ProjectPaint> rows)
     {
         _summary.Children.Clear();
-        var chosen = rows.Where(r => r.PaintId is not null && _paints.ContainsKey(r.PaintId)).ToList();
-        var toBuy = chosen.Count(r => !_owned.Contains(r.PaintId!));
+        var chosen = rows.Where(r => _catalogue.Paint(r.PaintId) is not null).ToList();
+        // A mix's paints you don't own count, not the mix.
+        var toBuy = chosen.SelectMany(r => _catalogue.ShoppingPaints(_catalogue.Paint(r.PaintId)!))
+            .Where(p => !_catalogue.OwnedIds.Contains(p.Id)).Select(p => p.Id).Distinct(Ids.Comparer).Count();
         var unchosen = rows.Count - chosen.Count;
         _summary.Children.Add(TableRows.Text($"{chosen.Count:N0} {(chosen.Count == 1 ? "paint" : "paints")}", secondary: true));
         if (toBuy > 0)
@@ -103,7 +104,7 @@ internal sealed partial class ProjectPaintView : UserControl
         if (unchosen > 0)
         {
             var without = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
-            without.Children.Add(PaintSwatch.Make(null, 12));
+            without.Children.Add(PaintSwatch.Make((string?)null, 12));
             without.Children.Add(TableRows.Text($"{unchosen:N0} {(unchosen == 1 ? "colour" : "colours")} without paint", secondary: true));
             _summary.Children.Add(without);
         }
@@ -140,11 +141,11 @@ internal sealed partial class ProjectPaintView : UserControl
         var row = (ProjectPaint)item;
         grid.DataContext = row;
         TableRows.Columns(grid, Widths);
-        var paint = row.PaintId is { } id && _paints.TryGetValue(id, out var p) ? p : null;
-        TableRows.Cell(grid, PaintSwatch.Make(paint?.SwatchHex), 0);
+        var paint = _catalogue.Paint(row.PaintId);
+        TableRows.Cell(grid, PaintSwatch.Make(paint), 0);
         if (paint is not null)
         {
-            TableRows.Cell(grid, TableRows.TwoLines(PaintText.DisplayName(paint), PaintText.SecondaryLine(paint)), 1);
+            TableRows.Cell(grid, TableRows.TwoLines(PaintText.DisplayName(paint), _catalogue.SecondaryLine(paint)), 1);
         }
         else
         {
@@ -154,33 +155,65 @@ internal sealed partial class ProjectPaintView : UserControl
             TableRows.Cell(grid, choose, 1);
         }
 
-        // The colour and "used for" are edited in place and saved when you leave the field.
-        var standard = new TextBox { Text = row.GuideStandard?.DisplayText ?? "", PlaceholderText = "e.g. FS 36270" };
-        var usedFor = new TextBox { Text = row.UsedFor ?? "", PlaceholderText = "e.g. upper surfaces" };
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(standard, "Colour");
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(usedFor, "Used For");
-        void Save()
+        // The guide colour: a system from the menu, and its code. An unknown
+        // system shows as Custom and is only written when the menu changes.
+        var system = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, MinWidth = 0 };
+        system.Items.Add(new ComboBoxItem { Content = "None", Tag = "" });
+        foreach (var known in PaintStandardSystem.All)
         {
-            try { _services.WithStore(s => { PaintService.SetText(s, row, standard.Text, usedFor.Text); return 0; }); }
+            var option = new ComboBoxItem { Content = known.MenuName, Tag = known.Raw };
+            ToolTipService.SetToolTip(option, known.Subjects);
+            system.Items.Add(option);
+        }
+        var shown = row.StandardSystem.Length == 0 ? null : PaintStandardSystem.FromRaw(row.StandardSystem) ?? PaintStandardSystem.Custom;
+        system.SelectedIndex = shown is null ? 0 : PaintStandardSystem.All.ToList().IndexOf(shown) + 1;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(system, "Standard");
+
+        // Code, Used For and Notes are edited in place and saved when you leave the field.
+        var code = new TextBox { Text = row.Standard ?? "", PlaceholderText = (shown ?? PaintStandardSystem.Custom).Prompt };
+        code.Visibility = shown is null ? Visibility.Collapsed : Visibility.Visible;
+        var usedFor = new TextBox { Text = row.UsedFor ?? "", PlaceholderText = "e.g. upper surfaces" };
+        var notes = new TextBox { Text = row.Notes ?? "", PlaceholderText = "e.g. lightened 20%" };
+        ToolTipService.SetToolTip(notes, "Changes for this project only, such as a lighter mix for faded paint");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(code, "Code");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(usedFor, "Used For");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(notes, "Notes");
+        void Save(Action<Core.Store.LibraryStore> save)
+        {
+            try { _services.WithStore(s => { save(s); return 0; }); }
             catch (SqliteException) { }
         }
-        standard.LostFocus += (_, _) => Save();
-        usedFor.LostFocus += (_, _) => Save();
-        TableRows.Cell(grid, standard, 2);
-        TableRows.Cell(grid, usedFor, 3);
+        system.SelectionChanged += (_, _) =>
+        {
+            var raw = (system.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
+            Save(s => PaintService.SetStandardSystem(s, row, raw));
+            // Choosing None clears the code.
+            if (raw.Length == 0) code.Text = "";
+            code.Visibility = raw.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+            code.PlaceholderText = (PaintStandardSystem.FromRaw(raw) ?? PaintStandardSystem.Custom).Prompt;
+        };
+        code.LostFocus += (_, _) => Save(s => PaintService.SetCodeAndUse(s, row, code.Text, usedFor.Text));
+        usedFor.LostFocus += (_, _) => Save(s => PaintService.SetCodeAndUse(s, row, code.Text, usedFor.Text));
+        notes.LostFocus += (_, _) => Save(s => PaintService.SetNotes(s, row, notes.Text));
+        TableRows.Cell(grid, system, 2);
+        TableRows.Cell(grid, code, 3);
+        TableRows.Cell(grid, usedFor, 4);
+        TableRows.Cell(grid, notes, 5);
 
         if (paint is not null)
         {
-            var isOwned = _owned.Contains(paint.Id);
-            var owned = new CheckBox { IsChecked = isOwned, MinWidth = 0, Padding = new Thickness(0) };
-            ToolTipService.SetToolTip(owned, isOwned ? "You own this paint" : "You don't own this paint yet");
+            // A mix's Owned box can't be ticked; its help says what's missing.
+            var isOwned = _catalogue.IsOwned(paint);
+            var owned = new CheckBox { IsChecked = isOwned, MinWidth = 0, Padding = new Thickness(0), IsEnabled = !paint.IsMix };
+            var cell = new Grid { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), Children = { owned } };
+            ToolTipService.SetToolTip(cell, _catalogue.OwnedHelp(paint));
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(owned, $"Owned: {PaintText.DisplayName(paint)}");
             owned.Click += (_, _) =>
             {
-                _services.WithStore(s => { s.SetOwned(paint.Id, owned.IsChecked == true); return 0; });
+                _services.WithStore(s => { PaintService.SetOwned(s, new[] { paint }, owned.IsChecked == true); return 0; });
                 Changed();
             };
-            TableRows.Cell(grid, owned, 4);
+            TableRows.Cell(grid, cell, 6);
         }
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(grid, paint is null ? $"{row.GuideStandard?.DisplayText ?? "Colour"}, no paint chosen" : PaintText.DisplayName(paint));
     }
@@ -215,22 +248,34 @@ internal sealed partial class ProjectPaintView : UserControl
 
     // MARK: Commands
 
+    /// <summary>Add Colour…: a Standard (starting on FS 595), a Code and Used For. Add Colour is off until there's a code.</summary>
     public async Task AddColour()
     {
-        var standard = new TextBox { Header = "Colour", PlaceholderText = "e.g. FS 36270 or RLM 74" };
+        var system = new ComboBox { Header = "Standard", HorizontalAlignment = HorizontalAlignment.Stretch };
+        foreach (var known in PaintStandardSystem.All)
+        {
+            var item = new ComboBoxItem { Content = known.MenuName, Tag = known };
+            ToolTipService.SetToolTip(item, known.Subjects);
+            system.Items.Add(item);
+        }
+        system.SelectedIndex = 0;
+        PaintStandardSystem Chosen() => (system.SelectedItem as ComboBoxItem)?.Tag as PaintStandardSystem ?? PaintStandardSystem.Fs595;
+        var code = new TextBox { Header = "Code", PlaceholderText = Chosen().Prompt };
         var usedFor = new TextBox { Header = "Used For", PlaceholderText = "e.g. upper surfaces" };
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot, Title = "Add Colour",
-            Content = new StackPanel { Spacing = 12, MinWidth = 380, Children = { standard, usedFor } },
+            Content = new StackPanel { Spacing = 12, MinWidth = 380, Children = { system, code, usedFor } },
             PrimaryButtonText = "Add Colour", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary, IsPrimaryButtonEnabled = false,
         };
-        standard.TextChanged += (_, _) => dialog.IsPrimaryButtonEnabled = standard.Text.Trim().Length > 0;
-        dialog.Opened += (_, _) => standard.Focus(FocusState.Programmatic);
+        system.SelectionChanged += (_, _) => code.PlaceholderText = Chosen().Prompt;
+        code.TextChanged += (_, _) => dialog.IsPrimaryButtonEnabled = code.Text.Trim().Length > 0;
+        dialog.Opened += (_, _) => code.Focus(FocusState.Programmatic);
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
         try
         {
-            var row = _services.WithStore(s => PaintService.AddColour(s, _project.Id, standard.Text, usedFor.Text));
+            var standard = new PaintStandard(Chosen(), code.Text);
+            var row = _services.WithStore(s => PaintService.AddColour(s, _project.Id, standard, usedFor.Text));
             Changed(row.Id);
         }
         catch (SqliteException error)
@@ -268,7 +313,7 @@ internal sealed partial class ProjectPaintView : UserControl
         var paint = picker.Result switch
         {
             PaintPickerDialog.PickerResult.Picked => picker.Chosen.FirstOrDefault(),
-            PaintPickerDialog.PickerResult.NewPaint => await NewPaint(row.GuideStandard?.DisplayText),
+            PaintPickerDialog.PickerResult.NewPaint => await NewPaint(row.GuideStandard),
             _ => null,
         };
         if (paint is null) return;
@@ -277,7 +322,7 @@ internal sealed partial class ProjectPaintView : UserControl
     }
 
     /// <summary>"New Paint…" in the picker: the editor, with the colour's standard filled in when choosing for one.</summary>
-    private async Task<Paint?> NewPaint(string? standard)
+    private async Task<Paint?> NewPaint(PaintStandard? standard)
     {
         var editor = new PaintEditorDialog(_services, null, false, standard) { XamlRoot = XamlRoot };
         return await editor.ShowAsync() == ContentDialogResult.Primary ? editor.Saved : null;

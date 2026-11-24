@@ -143,11 +143,15 @@ Windows project, not there). As of Mac 1.3.0 (`9c68bc9`, 2026-11-24):
   the new-project sheet and New Project from Kit…, status following the
   project, needed kits and mix recipe paints on the Shopping List, and kits
   in Search.
-- **Not yet:** the Build Photos tab (and Ctrl+5), mixes in the paint editor
-  and catalogue (Add Mix, recipes, a mix's Owned box), the Paints screen's
-  Match and Type columns and Type filter (and the picker's), Import ▸
-  Import from Scalemates… for paints, a project Paint tab's Notes column,
-  clear paints drawn as glass, project export and import
+- **Done:** mixes (`Core\Paints\PaintCatalogue.cs` works out a mix's
+  ownership and recipe text): Add Mix, the mix editor's recipe with Add
+  Paints to Recipe (a flyout, as a dialog can't open over the editor), and
+  a mix's Owned box. The Paints screen's Match and Type columns, Type filter
+  and Import ▸ menu with Import from Scalemates… (`ScalematesPaints.cs`).
+  The picker's Type menu and match labels. The Paint tab's Standard menu,
+  Code and Notes columns, and Add Colour with a Standard menu. Clear paints
+  drawn as glass (`Views\PaintSwatch.cs`).
+- **Not yet:** the Build Photos tab (and Ctrl+5), project export and import
   (`.benchbookproject`), the safety changes to link previews and restore
   (#15), one link per project (#7), and PDF markup badges kept on the page
   (#39).

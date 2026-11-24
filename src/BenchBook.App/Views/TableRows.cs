@@ -34,16 +34,18 @@ internal static class TableRows
         return list;
     }
 
-    /// <summary>Columns in a row, from widths: a number is pixels, "2*" is a share of what's left.</summary>
+    /// <summary>Columns in a row, from widths: a number is pixels, "2*" is a share of what's left, "Auto" fits its content.</summary>
     public static void Columns(Grid grid, params string[] widths)
     {
         grid.ColumnSpacing = 12;
         foreach (var width in widths)
             grid.ColumnDefinitions.Add(new ColumnDefinition
             {
-                Width = width.EndsWith('*')
-                    ? new GridLength(width.Length == 1 ? 1 : double.Parse(width[..^1], System.Globalization.CultureInfo.InvariantCulture), GridUnitType.Star)
-                    : new GridLength(double.Parse(width, System.Globalization.CultureInfo.InvariantCulture)),
+                Width = width == "Auto"
+                    ? GridLength.Auto
+                    : width.EndsWith('*')
+                        ? new GridLength(width.Length == 1 ? 1 : double.Parse(width[..^1], System.Globalization.CultureInfo.InvariantCulture), GridUnitType.Star)
+                        : new GridLength(double.Parse(width, System.Globalization.CultureInfo.InvariantCulture)),
             });
     }
 

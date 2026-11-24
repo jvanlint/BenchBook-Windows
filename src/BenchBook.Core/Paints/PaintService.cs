@@ -3,6 +3,9 @@ using BenchBook.Core.Store;
 
 namespace BenchBook.Core.Paints;
 
+/// <summary>One line of a mix's recipe: a catalogue paint and how many parts of it.</summary>
+public sealed record MixPartDraft(string PaintId, double Parts);
+
 /// <summary>A paint being created or edited, also used by CSV import.</summary>
 public sealed record PaintDraft
 {
@@ -26,6 +29,21 @@ public sealed record PaintDraft
     /// <summary>"#RRGGBB", or null for no swatch.</summary>
     public string? SwatchHex { get; init; }
     public bool IsOwned { get; init; }
+    /// <summary>A mix's recipe, in order. Ignored for a paint that isn't a mix.</summary>
+    public IReadOnlyList<MixPartDraft> Recipe { get; init; } = [];
+
+    /// <summary>Every recipe line needs more than zero parts.</summary>
+    public bool HasBadParts => IsMix && Recipe.Any(p => !(p.Parts > 0) || double.IsInfinity(p.Parts));
+
+    /// <summary>Moves a recipe paint one place up (-1) or down (1); nothing happens at the ends.</summary>
+    public PaintDraft MoveRecipePaint(string paintId, int offset)
+    {
+        var list = Recipe.ToList();
+        var from = list.FindIndex(p => Ids.Comparer.Equals(p.PaintId, paintId));
+        if (from < 0 || from + offset < 0 || from + offset >= list.Count) return this;
+        (list[from], list[from + offset]) = (list[from + offset], list[from]);
+        return this with { Recipe = list };
+    }
 
     /// <summary>Sets the standard from text such as "FS 36270" (behaviour.md, "Reading standard text").</summary>
     public PaintDraft WithStandardText(string text)
@@ -41,17 +59,30 @@ public sealed record PaintDraft
     /// <summary>A paint needs a brand and a code; a mix, a brand and a name.</summary>
     public bool MissingRequiredField => Brand.Trim().Length == 0 || (IsMix ? Name.Trim().Length == 0 : Code.Trim().Length == 0);
 
-    public static PaintDraft From(Paint paint, bool owned) => new()
+    /// <param name="recipe">A mix's recipe lines, in any order.</param>
+    public static PaintDraft From(Paint paint, bool owned, IEnumerable<PaintMixPart>? recipe = null) => new()
     {
         Brand = paint.Brand, Range = paint.Range, Code = paint.Code, Name = paint.Name,
         StandardSystem = paint.StandardSystem, StandardCode = paint.StandardCode, Match = paint.Match, Type = paint.Type, IsMix = paint.IsMix,
         Notes = paint.Notes ?? "", SwatchHex = paint.SwatchHex, IsOwned = owned,
+        Recipe = (recipe ?? []).OrderBy(p => p.Position).ThenBy(p => p.CreatedAt)
+            .Select(p => new MixPartDraft(p.PaintId, p.Parts)).ToList(),
     };
+
+    /// <summary>The same paint, recipe included. Records compare lists by reference, so the recipe is compared here.</summary>
+    public bool SameAs(PaintDraft other) =>
+        this with { Recipe = [] } == other with { Recipe = [] } && Recipe.SequenceEqual(other.Recipe);
 }
 
 public sealed class PaintException(string message) : Exception(message)
 {
     public static PaintException MissingBrandOrCode() => new("A paint needs a brand and a code.");
+
+    public static PaintException MissingBrandOrName() => new("A mix needs a brand and a name.");
+
+    public static PaintException BadParts() => new("Each paint in a recipe needs a number of parts more than zero.");
+
+    public static PaintException BadRecipePaint() => new("A recipe can only use paints from your catalogue that aren't mixes, each once.");
 
     public static PaintException InRecipe(Paint paint, IReadOnlyList<string> mixes) =>
         new($"“{PaintText.DisplayName(paint)}” is in the recipe for {PaintText.List(mixes)}. Take it out of those mixes first.");
@@ -73,20 +104,33 @@ public static class PaintService
         var now = IsoDate.Now();
         var paint = New();
         Apply(draft, paint);
-        store.InsertPaint(paint, draft.IsOwned && !draft.IsMix);
+        // A mix has no ownership of its own: it comes from its recipe.
+        store.InsertPaint(paint, draft.IsOwned && !draft.IsMix, recipe: RecipeOf(draft));
         return paint;
     }
 
+    /// <summary>Saves the paint, and a mix's recipe, when anything changed. Nothing is written otherwise.</summary>
     public static Paint Update(LibraryStore store, Paint paint, bool owned, PaintDraft draft)
     {
         Validate(store, draft, paint);
-        if (Tidy(draft) == Tidy(PaintDraft.From(paint, owned))) return paint;
+        var before = Tidy(PaintDraft.From(paint, owned, paint.IsMix ? store.MixParts(paint.Id) : null));
+        var after = Tidy(draft);
+        if (after.SameAs(before)) return paint;
         Apply(draft, paint);
         paint.UpdatedAt = IsoDate.Now();
-        // A mix has no ownership of its own.
-        store.UpdatePaint(paint, draft.IsOwned && !paint.IsMix);
+        var recipe = after.Recipe.SequenceEqual(before.Recipe) && after.IsMix == before.IsMix ? null : RecipeOf(after);
+        store.UpdatePaint(paint, draft.IsOwned && !paint.IsMix, recipe: recipe);
         return paint;
     }
+
+    /// <summary>The recipe to store: a mix's lines, or none for a paint that isn't a mix.</summary>
+    private static IReadOnlyList<MixPartDraft> RecipeOf(PaintDraft draft) => draft.IsMix ? draft.Recipe : [];
+
+    /// <summary>A mix's ownership comes from its recipe, so it's left alone.</summary>
+    public static void SetOwned(LibraryStore store, IEnumerable<Paint> paints, bool owned) => store.RunInTransaction(t =>
+    {
+        foreach (var paint in paints.Where(p => !p.IsMix)) store.SetOwned(paint.Id, owned, t);
+    });
 
     /// <summary>A paint with every field empty, for <see cref="Apply"/> to fill.</summary>
     public static Paint New()
@@ -125,7 +169,17 @@ public static class PaintService
 
     public static void Validate(LibraryStore store, PaintDraft draft, Paint? paint)
     {
-        if (draft.MissingRequiredField) throw PaintException.MissingBrandOrCode();
+        if (draft.MissingRequiredField) throw draft.IsMix ? PaintException.MissingBrandOrName() : PaintException.MissingBrandOrCode();
+        if (draft.IsMix)
+        {
+            if (draft.HasBadParts) throw PaintException.BadParts();
+            // Catalogue paints that aren't mixes, each once, and never the mix itself.
+            var ids = draft.Recipe.Select(p => p.PaintId).ToList();
+            if (ids.Distinct(Ids.Comparer).Count() != ids.Count || (paint is not null && ids.Contains(paint.Id, Ids.Comparer)))
+                throw PaintException.BadRecipePaint();
+            foreach (var id in ids)
+                if (store.Paint(id) is not { IsMix: false }) throw PaintException.BadRecipePaint();
+        }
         if (store.PaintWithKey(draft.IdentityKey) is { } existing && (paint is null || !Ids.Comparer.Equals(existing.Id, paint.Id)))
             throw PaintException.Duplicate(existing);
     }
@@ -162,6 +216,7 @@ public static class PaintService
             Match = system.Length == 0 ? "" : draft.Match.Trim(),
             Type = draft.Type.Trim(),
             Notes = draft.Notes.Trim(), SwatchHex = Swatch.Normalize(draft.SwatchHex),
+            Recipe = draft.IsMix ? draft.Recipe : [],
         };
     }
 
@@ -227,6 +282,51 @@ public static class PaintService
         row.UsedFor = newUsedFor;
         row.UpdatedAt = IsoDate.Now();
         store.UpdateProjectPaint(row);
+    }
+
+    /// <summary>The project's notes for this colour, such as "lightened 20%". Nothing is written if they didn't change.</summary>
+    public static void SetNotes(LibraryStore store, ProjectPaint row, string notes)
+    {
+        var tidy = Trimmed(notes.Replace("\r\n", "\n").Replace('\r', '\n'));
+        if (row.Notes == tidy) return;
+        row.Notes = tidy;
+        row.UpdatedAt = IsoDate.Now();
+        store.UpdateProjectPaint(row);
+    }
+
+    /// <summary>Sets the guide colour's system. No system clears the code (ProjectPaintView.swift).</summary>
+    public static void SetStandardSystem(LibraryStore store, ProjectPaint row, string systemRaw)
+    {
+        if (row.StandardSystem == systemRaw) return;
+        row.StandardSystem = systemRaw;
+        if (systemRaw.Length == 0) row.Standard = null;
+        row.UpdatedAt = IsoDate.Now();
+        store.UpdateProjectPaint(row);
+    }
+
+    /// <summary>Sets the guide colour's code within its system, and "used for". Nothing is written if neither changed.</summary>
+    public static void SetCodeAndUse(LibraryStore store, ProjectPaint row, string code, string usedFor)
+    {
+        var newCode = row.StandardSystem.Length == 0 ? null : Trimmed(code);
+        var newUsedFor = Trimmed(usedFor);
+        if (row.Standard == newCode && row.UsedFor == newUsedFor) return;
+        row.Standard = newCode;
+        row.UsedFor = newUsedFor;
+        row.UpdatedAt = IsoDate.Now();
+        store.UpdateProjectPaint(row);
+    }
+
+    /// <summary>A colour from the painting guide, with its system chosen from the menu, before a paint is chosen for it.</summary>
+    public static ProjectPaint AddColour(LibraryStore store, string projectId, PaintStandard standard, string usedFor)
+    {
+        var now = IsoDate.Now();
+        var row = new ProjectPaint
+        {
+            Id = Ids.New(), CreatedAt = now, UpdatedAt = now, ProjectId = projectId,
+            StandardSystem = standard.SystemRaw, Standard = Trimmed(standard.Code), UsedFor = Trimmed(usedFor),
+        };
+        store.InsertProjectPaints([row]);
+        return row;
     }
 
     /// <summary>

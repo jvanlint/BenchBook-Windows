@@ -51,26 +51,41 @@ public sealed partial class LibraryStore
         return result;
     }
 
-    public void InsertPaint(Paint paint, bool owned, SqliteTransaction? transaction = null)
+    /// <param name="recipe">A mix's recipe, in order; null leaves it alone.</param>
+    public void InsertPaint(Paint paint, bool owned, SqliteTransaction? transaction = null, IReadOnlyList<Paints.MixPartDraft>? recipe = null)
     {
         if (transaction is null)
         {
-            RunInTransaction(t => InsertPaint(paint, owned, t));
+            RunInTransaction(t => InsertPaint(paint, owned, t, recipe));
             return;
         }
         PaintsTable.InsertAll(_connection, transaction, [paint]);
         if (owned) SetOwned(paint.Id, true, transaction);
+        if (recipe is not null) ReplaceRecipe(paint.Id, recipe, transaction);
     }
 
-    public void UpdatePaint(Paint paint, bool owned, SqliteTransaction? transaction = null)
+    /// <param name="recipe">A mix's new recipe, in order; null leaves it alone.</param>
+    public void UpdatePaint(Paint paint, bool owned, SqliteTransaction? transaction = null, IReadOnlyList<Paints.MixPartDraft>? recipe = null)
     {
         if (transaction is null)
         {
-            RunInTransaction(t => UpdatePaint(paint, owned, t));
+            RunInTransaction(t => UpdatePaint(paint, owned, t, recipe));
             return;
         }
         PaintsTable.Update(_connection, paint, transaction);
         SetOwned(paint.Id, owned, transaction);
+        if (recipe is not null) ReplaceRecipe(paint.Id, recipe, transaction);
+    }
+
+    /// <summary>Replaces a mix's recipe lines, numbering them from 0 in the given order.</summary>
+    private void ReplaceRecipe(string mixId, IReadOnlyList<Paints.MixPartDraft> recipe, SqliteTransaction transaction)
+    {
+        Run("DELETE FROM paint_mix_parts WHERE mixId = $id", transaction, ("$id", mixId));
+        var now = IsoDate.Now();
+        PaintMixPartsTable.InsertAll(_connection, transaction, recipe.Select((line, position) => new PaintMixPart
+        {
+            Id = Ids.New(), CreatedAt = now, UpdatedAt = now, MixId = mixId, PaintId = line.PaintId, Parts = line.Parts, Position = position,
+        }).ToList());
     }
 
     public bool IsOwned(string paintId, SqliteTransaction? transaction = null) =>

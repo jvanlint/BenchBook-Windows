@@ -83,7 +83,7 @@ internal sealed partial class ShoppingListPage : Page
             {
                 var row = new Grid { ColumnSpacing = 12, Padding = new Thickness(0, 4, 0, 4), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
                 TableRows.Columns(row, "24", "1*");
-                TableRows.Cell(row, PaintSwatch.Make(null), 0);
+                TableRows.Cell(row, PaintSwatch.Make((string?)null), 0);
                 TableRows.Cell(row, TableRows.TwoLines(colour.Standard, colour.Use.ToString()), 1);
                 ToolTipService.SetToolTip(row, "Choose a paint for this colour on the project's Paint tab");
                 section.Children.Add(row);
@@ -108,7 +108,7 @@ internal sealed partial class ShoppingListPage : Page
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(owned, $"Mark {item.Title} as Owned");
         owned.Click += (_, _) => MarkOwned(item);
         TableRows.Cell(row, owned, 0);
-        TableRows.Cell(row, PaintSwatch.Make(item.Paint.SwatchHex), 1);
+        TableRows.Cell(row, PaintSwatch.Make(item.Paint), 1);
         var text = TableRows.TwoLines(item.Title, item.Detail);
         if (item.Uses.Count > 0) text.Children.Add(TableRows.Text(item.UsesLine, secondary: true));
         TableRows.Cell(row, text, 2);
