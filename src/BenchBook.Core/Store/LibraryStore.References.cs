@@ -12,6 +12,18 @@ public sealed record TagUsage(Tag Tag, int References, int Projects, int BuildPh
 {
     /// <summary>A tag is in use while any reference or build photo has it.</summary>
     public bool IsUnused => References == 0 && BuildPhotos == 0;
+
+    /// <summary>e.g. "12 references, 4 build photos", leaving out counts of zero, or "Not used".</summary>
+    public string Summary
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (References > 0) parts.Add($"{References:N0} {(References == 1 ? "reference" : "references")}");
+            if (BuildPhotos > 0) parts.Add($"{BuildPhotos:N0} {(BuildPhotos == 1 ? "build photo" : "build photos")}");
+            return parts.Count == 0 ? "Not used" : string.Join(", ", parts);
+        }
+    }
 }
 
 public sealed partial class LibraryStore
@@ -116,7 +128,8 @@ public sealed partial class LibraryStore
                 var u = usage.GetValueOrDefault(t.Id);
                 return new TagUsage(t, u.References, u.Projects, u.BuildPhotos);
             })
-            .OrderByDescending(u => u.References)
+            // Most used, by references and build photos together, then by name.
+            .OrderByDescending(u => u.References + u.BuildPhotos)
             .ThenBy(u => u.Tag.Name, NaturalComparer.Instance)
             .ToList();
     }

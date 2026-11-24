@@ -12,6 +12,15 @@ internal static class Words
         $"{count.ToString("N0", CultureInfo.CurrentCulture)} {(count == 1 ? singular : plural ?? singular + "s")}";
 
     /// <summary>e.g. "13 November 2026 at 09:41".</summary>
+    /// <summary>A build photo's caption, or when it was taken: "19 Nov 2026 at 2:05 pm".</summary>
+    public static string BuildPhotoTitle(BenchBook.Core.Model.BuildPhoto photo)
+    {
+        if (BenchBook.Core.BuildPhotos.BuildPhotoText.Caption(photo) is { } caption) return caption;
+        var local = photo.TakenAt.ToLocalTime();
+        var culture = CultureInfo.CurrentCulture;
+        return $"{local.ToString("d MMM yyyy", culture)} at {local.ToString("t", culture)}";
+    }
+
     public static string DateAndTime(DateTimeOffset date)
     {
         var local = date.ToLocalTime();

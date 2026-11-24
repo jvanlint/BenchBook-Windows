@@ -8,7 +8,7 @@ namespace BenchBook.App.Views;
 
 internal sealed record TagPageArgs(AppServices Services, string TagId);
 
-/// <summary>Every reference with one tag, grouped by project (screens.md, "Tags").</summary>
+/// <summary>Every reference and build photo with one tag, grouped by project (screens.md, "Tags").</summary>
 internal sealed partial class TagReferencesPage : Page
 {
     private readonly TextBlock _title = new() { Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] };
@@ -45,15 +45,20 @@ internal sealed partial class TagReferencesPage : Page
             _groups.Show([]);
             return;
         }
-        var entries = _args.Services.WithStore(s => s.ReferencesWithTag(tag.Id));
+        var (entries, photos) = _args.Services.WithStore(s => (s.ReferencesWithTag(tag.Id), s.BuildPhotosWithTag(tag.Id)));
         _title.Text = tag.Name;
-        _subtitle.Text = $"{entries.Count:N0} {(entries.Count == 1 ? "reference" : "references")}";
-        if (entries.Count == 0)
+        var counts = new List<string>();
+        if (entries.Count > 0 || photos.Count == 0) counts.Add(Words.Count(entries.Count, "reference"));
+        if (photos.Count > 0) counts.Add(Words.Count(photos.Count, "build photo"));
+        _subtitle.Text = string.Join(", ", counts);
+        if (entries.Count == 0 && photos.Count == 0)
             _empty.Children.Add(new TextBlock
             {
-                Text = "Nothing has this tag yet. Drag references onto it in the sidebar.",
+                Text = "Nothing has this tag yet. Drag references or build photos onto it in the sidebar.",
                 Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
             });
-        _groups.Show(entries.Select(e => new ResultRow(e, [])).ToList());
+        _groups.Show(
+            entries.Select(e => new ResultRow(e, [])).ToList(),
+            BenchBook.Core.BuildPhotos.BuildPhotoText.GalleryOrder(photos, p => p.Photo).Select(p => new PhotoResultRow(p, [])).ToList());
     }
 }

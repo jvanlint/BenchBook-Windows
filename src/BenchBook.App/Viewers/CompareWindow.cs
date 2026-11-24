@@ -22,6 +22,10 @@ internal sealed partial class CompareWindow : Window
     public const int MaxImages = 4;
 
     public static void Show(AppServices services, IReadOnlyList<ReferenceEntry> images) =>
+        Show(services, images.Select(e => (ViewerImage)e).ToList());
+
+    /// <summary>Image references or build photos, side by side.</summary>
+    public static void Show(AppServices services, IReadOnlyList<ViewerImage> images) =>
         WindowFrames.Present(new CompareWindow(services, images.Take(MaxImages).ToList()));
 
     private readonly AppServices _services;
@@ -50,7 +54,7 @@ internal sealed partial class CompareWindow : Window
     private readonly ScrollViewer _infoScroller = new() { Visibility = Visibility.Collapsed };
     private readonly Dictionary<string, TextBox> _noteFields = [];
 
-    private CompareWindow(AppServices services, List<ReferenceEntry> images)
+    private CompareWindow(AppServices services, List<ViewerImage> images)
     {
         _services = services;
         SystemBackdrop = new MicaBackdrop();
@@ -80,17 +84,21 @@ internal sealed partial class CompareWindow : Window
         foreach (var command in new ICommandBarElement[] { _gridLayout, _showBoxes, _drawBox, new AppBarSeparator(), zoomOut, zoomIn, fit, new AppBarSeparator(), _panelButton, new AppBarElementContainer { Content = _dropHint } })
             commands.PrimaryCommands.Add(command);
 
-        // References dragged in from the gallery join the comparison, up to four.
+        // References or build photos dragged in from a gallery join the comparison, up to four.
         _grid.DragOver += (_, e) =>
         {
-            if (e.DataView.Contains(AppServices.ReferencesDragFormat) && _panes.Count < MaxImages) e.AcceptedOperation = DataPackageOperation.Copy;
+            if ((e.DataView.Contains(AppServices.ReferencesDragFormat) || e.DataView.Contains(AppServices.BuildPhotosDragFormat)) && _panes.Count < MaxImages)
+                e.AcceptedOperation = DataPackageOperation.Copy;
         };
         _grid.Drop += async (_, e) =>
         {
-            if (await e.DataView.GetDataAsync(AppServices.ReferencesDragFormat) is not string ids) return;
-            var entries = _services.WithStore(s => s.ReferenceEntries(ids.Split(',')));
-            foreach (var entry in entries.Where(x => x.Reference.Kind == ReferenceKind.Image && _panes.All(p => p.Entry.Reference.Id != x.Reference.Id)).Take(MaxImages - _panes.Count))
-                AddPane(entry);
+            var images = new List<ViewerImage>();
+            if (e.DataView.Contains(AppServices.ReferencesDragFormat) && await e.DataView.GetDataAsync(AppServices.ReferencesDragFormat) is string ids)
+                images.AddRange(_services.WithStore(s => s.ReferenceEntries(ids.Split(','))).Where(x => x.Reference.Kind == ReferenceKind.Image).Select(x => (ViewerImage)x));
+            if (e.DataView.Contains(AppServices.BuildPhotosDragFormat) && await e.DataView.GetDataAsync(AppServices.BuildPhotosDragFormat) is string photoIds)
+                images.AddRange(_services.WithStore(s => s.BuildPhotoEntries(photoIds.Split(','))).Select(x => (ViewerImage)x));
+            foreach (var image in images.Where(x => _panes.All(p => !p.Entry.SameAs(x))).Take(MaxImages - _panes.Count))
+                AddPane(image);
             Layout();
         };
 
@@ -159,7 +167,7 @@ internal sealed partial class CompareWindow : Window
         Layout();
     }
 
-    private void AddPane(ReferenceEntry entry)
+    private void AddPane(ViewerImage entry)
     {
         var pane = new ImagePane(_services, entry) { ShowBoxes = _showBoxes.IsChecked == true };
         pane.Selected += (_, _) => Select(pane);
@@ -216,7 +224,7 @@ internal sealed partial class CompareWindow : Window
         _notesList.Children.Clear();
         _infoList.Children.Clear();
         if (_selected is not { } pane) { _panelTitle.Text = ""; return; }
-        _panelTitle.Text = ReferenceText.FallbackTitle(pane.Entry);
+        _panelTitle.Text = pane.Entry.Title;
 
         var notes = pane.Notes;
         if (notes.Count == 0)
@@ -280,7 +288,8 @@ internal sealed partial class CompareWindow : Window
             Row("Dimensions", $"{width:N0} × {height:N0} pixels");
             Row("Megapixels", $"{width * height / 1_000_000:0.0} MP");
         }
-        Row("Added", Words.DateAndTime(pane.Entry.Reference.CapturedAt));
+        if (pane.Entry.Photo is { } photo) Row("Taken", Words.DateAndTime(photo.Photo.TakenAt));
+        Row("Added", Words.DateAndTime(pane.Entry.Added));
         if (asset?.OriginalFilename is { } name) Row("File Name", name);
         if (asset is not null) Row("Size", Shell.FormatBytes(asset.ByteCount));
         if (pane.Entry.Tags.Count > 0) Row("Tags", string.Join(", ", pane.Entry.Tags.Select(t => t.Name)));
@@ -375,7 +384,7 @@ internal sealed partial class ImagePane : UserControl
     private double _panX, _panY;
     private bool _panning;
 
-    public ImagePane(AppServices services, ReferenceEntry entry)
+    public ImagePane(AppServices services, ViewerImage entry)
     {
         _services = services;
         Entry = entry;
@@ -434,7 +443,7 @@ internal sealed partial class ImagePane : UserControl
             _surface.ReleasePointerCapture(e.Pointer);
             if (!drawing) return;
             var rect = NoteGeometry.FromDrag(_drawStart.X, _drawStart.Y, point.X, point.Y, _width, _height);
-            var added = _services.WithStore(st => ImageNotes.Add(st, Entry.Reference.Id, rect, _width, _height));
+            var added = _services.WithStore(st => Entry.AddNote(st, rect, _width, _height));
             if (added is null) { DrawBoxes(); return; } // A click, not a box.
             Reload(added.Id);
             NoteAdded?.Invoke(this, added.Id);
@@ -488,7 +497,7 @@ internal sealed partial class ImagePane : UserControl
         _ = Load(entry);
     }
 
-    public ReferenceEntry Entry { get; private set; }
+    public ViewerImage Entry { get; private set; }
 
     private readonly Button _only;
 
@@ -531,7 +540,7 @@ internal sealed partial class ImagePane : UserControl
     /// <summary>Reads the image's notes again, e.g. after one is edited in the panel.</summary>
     public void Reload(string? select = null)
     {
-        _notes = ImageNotes.Sorted(_services.WithStore(st => st.Markups(Entry.Reference.Id)));
+        _notes = _services.WithStore(Entry.Notes);
         if (select is not null) _selectedNote = select;
         DrawBoxes();
     }
@@ -571,14 +580,14 @@ internal sealed partial class ImagePane : UserControl
         return button;
     }
 
-    private async Task Load(ReferenceEntry entry)
+    private async Task Load(ViewerImage entry)
     {
         Entry = entry;
         _loaded = false;
         _image.Source = null;
-        _title.Text = ReferenceText.FallbackTitle(entry);
+        _title.Text = entry.Title;
         _selectedNote = null;
-        _notes = ImageNotes.Sorted(_services.WithStore(s => s.Markups(entry.Reference.Id)));
+        _notes = _services.WithStore(entry.Notes);
         ImageChanged?.Invoke(this, EventArgs.Empty);
         if (entry.Asset is not { } asset || _services.Location.FullPath(asset.OriginalRelativePath) is not { } path || !File.Exists(path)) return;
         try
@@ -603,14 +612,14 @@ internal sealed partial class ImagePane : UserControl
         }
         catch (Exception)
         {
-            _title.Text = $"{ReferenceText.FallbackTitle(entry)} (can't be shown)";
+            _title.Text = $"{entry.Title} (can't be shown)";
         }
     }
 
     private void Step(int direction)
     {
-        var images = _services.WithStore(s => s.ProjectReferences(Entry.Reference.ProjectId)).Where(e => e.Reference.Kind == ReferenceKind.Image).ToList();
-        var index = images.FindIndex(e => Ids.Comparer.Equals(e.Reference.Id, Entry.Reference.Id));
+        var images = _services.WithStore(Entry.Siblings);
+        var index = images.FindIndex(Entry.SameAs);
         if (index < 0 || index + direction < 0 || index + direction >= images.Count) return;
         _ = Load(images[index + direction]);
     }

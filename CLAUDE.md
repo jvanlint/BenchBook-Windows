@@ -151,7 +151,17 @@ Windows project, not there). As of Mac 1.3.0 (`9c68bc9`, 2026-11-24):
   The picker's Type menu and match labels. The Paint tab's Standard menu,
   Code and Notes columns, and Add Colour with a Standard menu. Clear paints
   drawn as glass (`Views\PaintSwatch.cs`).
-- **Not yet:** the Build Photos tab (and Ctrl+5), project export and import
+- **Done:** Build Photos (`Core\BuildPhotos\`, `Views\BuildPhotosView.cs`):
+  the tab (Ctrl+5) grouped as Completed then by day, adding by drop, paste
+  and Add Photos… (Ctrl+O there), the date taken from EXIF, stages, details,
+  tags, the project photo in the header, box notes, the image viewer and
+  comparison (both take a `Viewers\ViewerImage`, a reference or a build
+  photo), export with location data removed in the file's own bytes
+  (`Capture\PhotoMetadata.cs`: EXIF GPS and XMP GPS blanked, same size, PNG
+  checksums redone), and build photos in Search, tag pages and the Tags
+  screen ("Used By"). Windows leaves out Import from Photos… and Continuity
+  Camera; Space opens the photo in its default app, as there's no Quick Look.
+- **Not yet:** project export and import
   (`.benchbookproject`), the safety changes to link previews and restore
   (#15), one link per project (#7), and PDF markup badges kept on the page
   (#39).

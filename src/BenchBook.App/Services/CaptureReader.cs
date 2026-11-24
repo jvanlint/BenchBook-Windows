@@ -14,7 +14,7 @@ internal static class CaptureReader
 {
     /// <summary>True for files, links, pictures or text from outside BenchBook.</summary>
     public static bool CanCapture(DataPackageView data) =>
-        !data.Contains(AppServices.ReferencesDragFormat) && !data.Contains(AppServices.TagDragFormat)
+        !data.Contains(AppServices.ReferencesDragFormat) && !data.Contains(AppServices.TagDragFormat) && !data.Contains(AppServices.BuildPhotosDragFormat)
         && (data.Contains(StandardDataFormats.StorageItems) || data.Contains(StandardDataFormats.WebLink)
             || data.Contains(StandardDataFormats.Bitmap) || data.Contains(StandardDataFormats.Text));
 
@@ -55,6 +55,26 @@ internal static class CaptureReader
     /// </summary>
     public static Task<(List<CapturedItem> Items, List<string> Skipped)> ReadForShare(DataPackageView data, string folder) =>
         Read(data, folder, share: true);
+
+    /// <summary>
+    /// Reads files and pictures from a drop or the clipboard into <paramref name="temporary"/>
+    /// where they have no file of their own, for Build Photos. Links and text aren't photos.
+    /// </summary>
+    public static async Task<(List<(string Path, string? Name)> Files, List<string> Skipped)> ReadPhotos(DataPackageView data, string temporary)
+    {
+        var (items, skipped) = await Read(data, temporary, share: false);
+        var files = new List<(string, string?)>();
+        foreach (var item in items)
+        {
+            if (item is CapturedItem.File file) files.Add((file.Path, file.OriginalFilename));
+            else skipped.Add(item is CapturedItem.Link link ? link.Url : "Text");
+        }
+        return (files, skipped);
+    }
+
+    /// <summary>True for files or pictures from outside BenchBook, which can be build photos.</summary>
+    public static bool CanCapturePhotos(DataPackageView data) =>
+        CanCapture(data) && (data.Contains(StandardDataFormats.StorageItems) || data.Contains(StandardDataFormats.Bitmap));
 
     private static async Task<(List<CapturedItem> Items, List<string> Skipped)> Read(DataPackageView data, string temporary, bool share)
     {

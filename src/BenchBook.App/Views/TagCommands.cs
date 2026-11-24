@@ -38,7 +38,7 @@ internal static class TagCommands
         if (other is not null && !Ids.Comparer.Equals(other.Id, tag.Id))
         {
             var merge = Dialog(root, $"“{other.Name}” Already Exists",
-                Wrapped($"Merge the two tags? References tagged with either will have “{newName}”."), "Merge Tags");
+                Wrapped($"Merge the two tags? References and build photos tagged with either will have “{newName}”."), "Merge Tags");
             if (await merge.ShowAsync() != ContentDialogResult.Primary) return false;
         }
         return await Run(root, "Couldn't Save Tag", () => services.WithStore(s => s.RenameTag(tag.Id, newName)));
@@ -48,11 +48,19 @@ internal static class TagCommands
     {
         if (tags.Count == 0) return false;
         var references = tags.Sum(t => t.References);
+        var photos = tags.Sum(t => t.BuildPhotos);
+        static string Count(int n, string one, string many) => $"{n:N0} {(n == 1 ? one : many)}";
+        // As the Mac words it (TagManagerView.swift).
+        var message = (references, photos) switch
+        {
+            (0, 0) => "No references or build photos use them.",
+            (_, 0) => $"They'll be removed from {Count(references, "reference", "references")}, which aren't deleted.",
+            (0, _) => $"They'll be removed from {Count(photos, "build photo", "build photos")}, which aren't deleted.",
+            _ => $"They'll be removed from {Count(references, "reference", "references")} and {Count(photos, "build photo", "build photos")}, which aren't deleted.",
+        };
         var dialog = Dialog(root,
             tags.Count == 1 ? $"Delete “{tags[0].Tag.Name}”?" : $"Delete {tags.Count:N0} Tags?",
-            Wrapped(references == 0
-                ? "No references use them."
-                : $"They'll be removed from {references:N0} {(references == 1 ? "reference" : "references")}. The references themselves aren't deleted."),
+            Wrapped(message),
             "Delete");
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return false;
         return await Run(root, "Couldn't Change Tags", () => services.WithStore(s => { s.DeleteTags(tags.Select(t => t.Tag.Id).ToList()); return 0; }));
@@ -65,7 +73,7 @@ internal static class TagCommands
         foreach (var tag in tags) choices.Items.Add($"Keep “{tag.Tag.Name}”");
         choices.SelectedIndex = 0;
         var dialog = Dialog(root, $"Merge {tags.Count:N0} Tags?",
-            Stack(Wrapped("References with any of these tags will have the one you keep. The others are deleted."), choices), "Merge Tags");
+            Stack(Wrapped("References and build photos with any of these tags will have the one you keep. The others are deleted."), choices), "Merge Tags");
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return false;
         var target = tags[Math.Max(0, choices.SelectedIndex)].Tag.Id;
         return await Run(root, "Couldn't Change Tags", () => services.WithStore(s => { s.MergeTags(tags.Select(t => t.Tag.Id).ToList(), target); return 0; }));

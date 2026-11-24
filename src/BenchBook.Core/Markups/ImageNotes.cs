@@ -99,8 +99,8 @@ public static class ImageNotes
     /// <summary>An image's notes in the order they were added, which is also their number (the first is 1).</summary>
     public static List<Markup> Sorted(IEnumerable<Markup> markups) => markups.OrderBy(m => m.CreatedAt).ThenBy(m => m.Id, StringComparer.Ordinal).ToList();
 
-    /// <summary>Adds a note for a box drawn in image pixels. Null for a box too small to be deliberate.</summary>
-    public static Markup? Add(LibraryStore store, string referenceId, PixelRect drawn, double imageWidth, double imageHeight)
+    /// <summary>Adds a note for a box drawn in image pixels, on a reference or a build photo. Null for a box too small to be deliberate.</summary>
+    public static Markup? Add(LibraryStore store, string? referenceId, PixelRect drawn, double imageWidth, double imageHeight, string? buildPhotoId = null)
     {
         var rect = NoteGeometry.Clamp(drawn, imageWidth, imageHeight);
         if (!NoteGeometry.IsLargeEnough(rect)) return null;
@@ -108,7 +108,7 @@ public static class ImageNotes
         var now = IsoDate.Now();
         var note = new Markup
         {
-            Id = Ids.New(), CreatedAt = now, UpdatedAt = now, ReferenceId = referenceId,
+            Id = Ids.New(), CreatedAt = now, UpdatedAt = now, ReferenceId = referenceId, BuildPhotoId = buildPhotoId,
             PageIndex = 0, Kind = "note", Color = "yellow", X = x, Y = y, Width = w, Height = h, Points = [], Text = "",
         };
         store.InsertMarkup(note);

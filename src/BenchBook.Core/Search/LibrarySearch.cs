@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using BenchBook.Core.BuildPhotos;
 using BenchBook.Core.Capture;
 using BenchBook.Core.Model;
 using BenchBook.Core.Store;
@@ -62,7 +63,13 @@ public sealed record SearchMatch(string Label, string Text, bool IsTitle, bool S
 
 public sealed record ReferenceHit(ReferenceEntry Entry, IReadOnlyList<SearchMatch> Matches);
 
-public sealed record ProjectHits(Project Project, IReadOnlyList<ReferenceHit> Hits);
+public sealed record BuildPhotoHit(BuildPhotoEntry Entry, IReadOnlyList<SearchMatch> Matches);
+
+/// <summary>A project's matching references, then its matching build photos in gallery order.</summary>
+public sealed record ProjectHits(Project Project, IReadOnlyList<ReferenceHit> Hits, IReadOnlyList<BuildPhotoHit>? PhotoHits = null)
+{
+    public IReadOnlyList<BuildPhotoHit> Photos => PhotoHits ?? [];
+}
 
 public sealed record SearchResults(
     IReadOnlyList<Project> Projects,
@@ -72,6 +79,7 @@ public sealed record SearchResults(
     IReadOnlyList<ProjectHits> ReferenceGroups)
 {
     public int ReferenceCount => ReferenceGroups.Sum(g => g.Hits.Count);
+    public int BuildPhotoCount => ReferenceGroups.Sum(g => g.Photos.Count);
     public bool IsEmpty => Projects.Count == 0 && Kits.Count == 0 && Paints.Count == 0 && AftermarketItems.Count == 0 && ReferenceGroups.Count == 0;
 }
 
@@ -85,11 +93,14 @@ public sealed class LibrarySearch
 
     private sealed record Entry(ReferenceEntry Reference, HashSet<string> Tags, List<Part> Parts);
 
+    private sealed record PhotoEntry(BuildPhotoEntry Photo, HashSet<string> Tags, List<Part> Parts);
+
     private readonly List<(Project Project, List<SearchField> Fields)> _projects;
     private readonly List<(Kit Kit, List<SearchField> Fields)> _kits;
     private readonly List<(Paint Paint, List<SearchField> Fields)> _paints;
     private readonly List<(AftermarketItem Item, List<SearchField> Fields)> _items;
     private readonly List<Entry> _references;
+    private readonly List<PhotoEntry> _photos;
 
     public LibrarySearch(LibraryStore store)
     {
@@ -117,12 +128,19 @@ public sealed class LibrarySearch
             e,
             e.Tags.Select(t => t.NormalizedName).ToHashSet(StringComparer.Ordinal),
             Parts(e, markups.GetValueOrDefault(e.Reference.Id) ?? []))).ToList();
+
+        var photoNotes = snapshot.Markups.Where(m => m.BuildPhotoId is not null)
+            .GroupBy(m => m.BuildPhotoId!, Ids.Comparer).ToDictionary(g => g.Key, g => g.ToList(), Ids.Comparer);
+        _photos = store.AllBuildPhotos().Select(e => new PhotoEntry(
+            e,
+            e.Tags.Select(t => t.NormalizedName).ToHashSet(StringComparer.Ordinal),
+            PhotoParts(e, photoNotes.GetValueOrDefault(e.Photo.Id) ?? []))).ToList();
     }
 
     public SearchResults Search(SearchQuery query)
     {
         if (query.IsEmpty) return new SearchResults([], [], [], [], []);
-        // Only references have tags, so a tag token leaves only references.
+        // Only references and build photos have tags, so a tag token leaves only them.
         var projects = query.Tags.Count > 0 ? [] : _projects.Where(p => query.MatchesEveryWord(p.Fields)).Select(p => p.Project).ToList();
         var kits = query.Tags.Count > 0 ? [] : _kits.Where(k => query.MatchesEveryWord(k.Fields)).Select(k => k.Kit).ToList();
         var paints = query.Tags.Count > 0 ? [] : _paints.Where(p => query.MatchesEveryWord(p.Fields)).Select(p => p.Paint).ToList();
@@ -137,9 +155,19 @@ public sealed class LibrarySearch
             if (!hits.TryGetValue(projectId, out var list)) hits[projectId] = list = [];
             list.Add(new ReferenceHit(entry.Reference, matches));
         }
-        var groups = _projects.Where(p => hits.ContainsKey(p.Project.Id)).Select(p => new ProjectHits(p.Project,
+        var photoHits = new Dictionary<string, List<BuildPhotoHit>>(Ids.Comparer);
+        foreach (var entry in _photos)
+        {
+            if (!query.Tags.IsSubsetOf(entry.Tags) || !query.MatchesEveryWord(entry.Parts.Select(p => p.Field).ToList())) continue;
+            var matches = entry.Parts.Where(p => query.MatchesAnyWord(p.Field)).Select(p => p.Match).ToList();
+            var projectId = entry.Photo.Photo.ProjectId;
+            if (!photoHits.TryGetValue(projectId, out var list)) photoHits[projectId] = list = [];
+            list.Add(new BuildPhotoHit(entry.Photo, matches));
+        }
+        var groups = _projects.Where(p => hits.ContainsKey(p.Project.Id) || photoHits.ContainsKey(p.Project.Id)).Select(p => new ProjectHits(p.Project,
             // Title matches first, then newest first, as in the gallery.
-            hits[p.Project.Id].OrderByDescending(h => h.Matches.Any(m => m.IsTitle)).ThenByDescending(h => h.Entry.Reference.CapturedAt).ToList())).ToList();
+            (hits.GetValueOrDefault(p.Project.Id) ?? []).OrderByDescending(h => h.Matches.Any(m => m.IsTitle)).ThenByDescending(h => h.Entry.Reference.CapturedAt).ToList(),
+            BuildPhotoText.GalleryOrder(photoHits.GetValueOrDefault(p.Project.Id) ?? [], h => h.Entry.Photo).ToList())).ToList();
         return new SearchResults(projects, kits, paints, items, groups);
     }
 
@@ -176,6 +204,28 @@ public sealed class LibrarySearch
         }
         foreach (var moment in entry.Moments)
             Add(VideoLink.Format(moment.OffsetSeconds), string.Join(" — ", new[] { moment.Title, moment.Note }.Where(t => t is not null)), moment: moment.OffsetSeconds);
+        return parts;
+    }
+
+    /// <summary>Caption, "Build Photo", its stage, tags, file name, the whole note when it's more than the caption, and box notes.</summary>
+    private static List<Part> PhotoParts(BuildPhotoEntry entry, List<Markup> notes)
+    {
+        var photo = entry.Photo;
+        var parts = new List<Part>();
+        void Add(string label, string? text, bool isTitle = false, bool line = true, string? markup = null)
+        {
+            var trimmed = text?.Trim();
+            if (!string.IsNullOrEmpty(trimmed)) parts.Add(new Part(new SearchMatch(label, trimmed, isTitle, line, null, markup), SearchField.Of(trimmed)));
+        }
+        var caption = BuildPhotoText.Caption(photo);
+        Add("Title", caption, isTitle: true, line: false);
+        Add("Type", "Build Photo", line: false);
+        Add("Type", BuildPhotoText.StageName(photo), line: false);
+        foreach (var tag in entry.Tags) Add("Tag", tag.Name, line: false);
+        Add("File Name", entry.Asset?.OriginalFilename);
+        if (photo.Notes?.Trim() is { } whole && whole != caption) Add("Note", whole);
+        var number = 0;
+        foreach (var note in notes.OrderBy(m => m.CreatedAt)) Add($"Box {++number}", note.Text, markup: note.Id);
         return parts;
     }
 

@@ -8,7 +8,7 @@ using Microsoft.UI.Xaml.Media;
 
 namespace BenchBook.App.Views;
 
-/// <summary>The tag manager (screens.md, "Tags"): colour, name, references and projects for every tag.</summary>
+/// <summary>The tag manager (screens.md, "Tags"): colour, name, what uses it and its projects, for every tag.</summary>
 internal sealed partial class TagsPage : Page
 {
     private readonly AppServices _services;
@@ -45,7 +45,7 @@ internal sealed partial class TagsPage : Page
         Grid.SetColumn(commands, 1);
         header.Children.Add(commands);
 
-        _list.Header = Row("Colour", "Name", "References", "Projects", header: true);
+        _list.Header = Row("Colour", "Name", "Used By", "Projects", header: true);
         _list.DoubleTapped += (_, e) =>
         {
             if ((e.OriginalSource as FrameworkElement)?.DataContext is TagUsage usage) _showTag(usage.Tag.Id);
@@ -63,7 +63,7 @@ internal sealed partial class TagsPage : Page
         _empty.Children.Add(new TextBlock { Text = "No Tags", Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"], HorizontalAlignment = HorizontalAlignment.Center });
         _empty.Children.Add(new TextBlock
         {
-            Text = "Tags you add to references appear here, where you can rename, colour, merge and delete them.",
+            Text = "Tags you add to references and build photos appear here, where you can rename, colour, merge and delete them.",
             TextWrapping = TextWrapping.Wrap,
             TextAlignment = TextAlignment.Center,
             Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
@@ -94,13 +94,13 @@ internal sealed partial class TagsPage : Page
         _list.Items.Clear();
         foreach (var usage in _tags)
         {
-            var row = Row(null, usage.Tag.Name, usage.References.ToString("N0"), usage.Projects.ToString("N0"), header: false, color: usage.Tag.Color);
+            var row = Row(null, usage.Tag.Name, usage.Summary, usage.Projects.ToString("N0"), header: false, color: usage.Tag.Color);
             row.DataContext = usage;
             _list.Items.Add(row);
         }
         var unused = _tags.Count(t => t.IsUnused);
         _removeUnused.IsEnabled = unused > 0;
-        ToolTipService.SetToolTip(_removeUnused, unused > 0 ? $"Delete the {unused:N0} tags no reference uses" : "Every tag is in use");
+        ToolTipService.SetToolTip(_removeUnused, unused > 0 ? $"Delete the {unused:N0} {(unused == 1 ? "tag" : "tags")} no reference or build photo uses" : "Every tag is in use");
         _empty.Visibility = _tags.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         _list.Visibility = _tags.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
     }
@@ -110,7 +110,7 @@ internal sealed partial class TagsPage : Page
         var grid = new Grid { ColumnSpacing = 16, Padding = new Thickness(header ? 12 : 0, 6, 0, 6) };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(100) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(100) });
         UIElement first = colour is not null ? Cell(colour, header) : TagCommands.Dot(color, 14);
         if (first is FrameworkElement element) element.HorizontalAlignment = HorizontalAlignment.Left;
@@ -121,7 +121,7 @@ internal sealed partial class TagsPage : Page
             Grid.SetColumn(cells[i], i + 1);
             grid.Children.Add(cells[i]);
         }
-        if (!header) Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(grid, $"{name}, {references} references, {projects} projects");
+        if (!header) Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(grid, $"{name}, {references}, {projects} projects");
         return grid;
     }
 
@@ -157,7 +157,7 @@ internal sealed partial class TagsPage : Page
         var menu = new MenuFlyout();
         if (chosen.Count == 1)
         {
-            var show = new MenuFlyoutItem { Text = "Show References" };
+            var show = new MenuFlyoutItem { Text = "Show Tagged Items" };
             show.Click += (_, _) => _showTag(clicked.Tag.Id);
             menu.Items.Add(show);
             var rename = new MenuFlyoutItem { Text = "Rename…" };

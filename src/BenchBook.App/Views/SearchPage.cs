@@ -44,7 +44,9 @@ internal sealed partial class SearchPage : Page
         var query = new SearchQuery(text, tags.Select(t => t.NormalizedName));
         var results = _index().Search(query);
         var count = results.ReferenceCount;
-        _title.Text = $"Search · {count:N0} {(count == 1 ? "reference" : "references")}";
+        // "Search · 4 references", adding "2 build photos" when there are any.
+        _title.Text = $"Search · {count:N0} {(count == 1 ? "reference" : "references")}"
+            + (results.BuildPhotoCount > 0 ? $", {Words.Count(results.BuildPhotoCount, "build photo")}" : "");
 
         // Tag tokens: each narrows the results to references with every chosen tag.
         _tokens.Children.Clear();
@@ -96,22 +98,23 @@ internal sealed partial class SearchPage : Page
         if (results.Paints.Count > 0)
         {
             var list = Section("Paints");
-            foreach (var paint in results.Paints)
-                list.Children.Add(new TextBlock { Text = $"{paint.Brand} {paint.Code} {paint.Name}".Trim() + (paint.Standard is { } standard ? $" · {standard.DisplayText}" : "") });
+            var catalogue = _services.WithStore(BenchBook.Core.Paints.PaintCatalogue.Load);
+            foreach (var paint in results.Paints) list.Children.Add(PaintRow(paint, catalogue));
         }
         if (results.AftermarketItems.Count > 0)
         {
             var list = Section("Aftermarket");
-            foreach (var item in results.AftermarketItems)
-                list.Children.Add(new TextBlock { Text = string.Join(" · ", new[] { item.ProductName, item.Manufacturer, LibrarySearch.AftermarketTypeName(item.Type) }.Where(s => s.Length > 0)) });
+            foreach (var item in results.AftermarketItems) list.Children.Add(PartRow(item));
         }
 
-        _groups.Show(results.ReferenceGroups.SelectMany(g => g.Hits).Select(hit => new ResultRow(hit.Entry,
-            hit.Matches.Where(m => m.ShownAsLine).Select(m =>
-            {
-                var (excerpt, bold) = SearchSnippet.Excerpt(m.Text, query);
-                return new MatchLine(m.Label, excerpt, bold, m.MomentSeconds, m.MarkupId);
-            }).ToList())).ToList());
+        List<MatchLine> Lines(IEnumerable<SearchMatch> matches) => matches.Where(m => m.ShownAsLine).Select(m =>
+        {
+            var (excerpt, bold) = SearchSnippet.Excerpt(m.Text, query);
+            return new MatchLine(m.Label, excerpt, bold, m.MomentSeconds, m.MarkupId);
+        }).ToList();
+        _groups.Show(
+            results.ReferenceGroups.SelectMany(g => g.Hits).Select(hit => new ResultRow(hit.Entry, Lines(hit.Matches))).ToList(),
+            results.ReferenceGroups.SelectMany(g => g.Photos).Select(hit => new PhotoResultRow(hit.Entry, Lines(hit.Matches))).ToList());
     }
 
     /// <summary>Box art, brand and name, scale, number and notes, and its status or "Not Owned".</summary>
@@ -137,6 +140,74 @@ internal sealed partial class SearchPage : Page
         menu.Items.Add(show);
         row.ContextFlyout = menu;
         row.DoubleTapped += (_, _) => _services.ShowKit?.Invoke(kit.Id);
+        return row;
+    }
+
+    /// <summary>A paint: its swatch, name, and range and standard. Click shows it in Paints; right-click: Edit Paint…, Show in Paints.</summary>
+    private Grid PaintRow(BenchBook.Core.Model.Paint paint, BenchBook.Core.Paints.PaintCatalogue catalogue)
+    {
+        var row = new Grid { ColumnSpacing = 10, Padding = new Thickness(0, 2, 0, 2), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
+        TableRows.Columns(row, "20", "Auto", "1*");
+        row.ColumnSpacing = 8;
+        TableRows.Cell(row, PaintSwatch.Make(paint), 0);
+        var name = BenchBook.Core.Paints.PaintText.DisplayName(paint);
+        var link = new HyperlinkButton { Content = name, Padding = new Thickness(0, 2, 0, 2) };
+        ToolTipService.SetToolTip(link, "Show in Paints");
+        link.Click += (_, _) => _services.ShowPaint?.Invoke(paint.Id);
+        TableRows.Cell(row, link, 1);
+        TableRows.Cell(row, Secondary(catalogue.SecondaryLine(paint)), 2);
+
+        var menu = new MenuFlyout();
+        var edit = new MenuFlyoutItem { Text = paint.IsMix ? "Edit Mix…" : "Edit Paint…", Icon = new SymbolIcon(Symbol.Edit) };
+        edit.Click += async (_, _) =>
+        {
+            var dialog = new PaintEditorDialog(_services, paint, catalogue.OwnedIds.Contains(paint.Id)) { XamlRoot = XamlRoot };
+            if (await dialog.ShowAsync() == ContentDialogResult.Primary && dialog.Saved is not null)
+            {
+                _services.NotifyLibraryChanged();
+                Show(_query, _tags);
+            }
+        };
+        menu.Items.Add(edit);
+        var show = new MenuFlyoutItem { Text = "Show in Paints" };
+        show.Click += (_, _) => _services.ShowPaint?.Invoke(paint.Id);
+        menu.Items.Add(show);
+        row.ContextFlyout = menu;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row, $"{name}, {catalogue.SecondaryLine(paint)}");
+        return row;
+    }
+
+    /// <summary>An aftermarket part. Click shows it in its project; right-click: Edit Part…, Show in Project.</summary>
+    private Grid PartRow(BenchBook.Core.Model.AftermarketItem item)
+    {
+        var row = new Grid { Padding = new Thickness(0, 2, 0, 2), Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent) };
+        TableRows.Columns(row, "Auto", "1*");
+        row.ColumnSpacing = 8;
+        var link = new HyperlinkButton { Content = item.ProductName, Padding = new Thickness(0, 2, 0, 2) };
+        ToolTipService.SetToolTip(link, "Show in Project");
+        link.Click += (_, _) => _services.ShowAftermarket?.Invoke(item.ProjectId);
+        TableRows.Cell(row, link, 0);
+        var details = string.Join(" · ", new[] { item.Manufacturer, LibrarySearch.AftermarketTypeName(item.Type) }.Where(s => !string.IsNullOrEmpty(s)));
+        TableRows.Cell(row, Secondary(details), 1);
+
+        var menu = new MenuFlyout();
+        var edit = new MenuFlyoutItem { Text = "Edit Part…", Icon = new SymbolIcon(Symbol.Edit) };
+        edit.Click += async (_, _) =>
+        {
+            if (_services.WithStore(s => s.Project(item.ProjectId)) is not { } project) return;
+            var dialog = new AftermarketEditorDialog(_services, project, item) { XamlRoot = XamlRoot };
+            if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+            {
+                _services.NotifyLibraryChanged();
+                Show(_query, _tags);
+            }
+        };
+        menu.Items.Add(edit);
+        var show = new MenuFlyoutItem { Text = "Show in Project" };
+        show.Click += (_, _) => _services.ShowAftermarket?.Invoke(item.ProjectId);
+        menu.Items.Add(show);
+        row.ContextFlyout = menu;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row, $"{item.ProductName}, {details}");
         return row;
     }
 

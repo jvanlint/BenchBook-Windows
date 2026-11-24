@@ -95,6 +95,9 @@ public sealed class AppServices : IDisposable, IStoreAccess
     /// <summary>The drag format for a tag dragged from the sidebar onto references.</summary>
     public const string TagDragFormat = "BenchBook.Tag";
 
+    /// <summary>Build photos dragged from their grid: comma-separated ids, for a tag in the sidebar or a comparison.</summary>
+    public const string BuildPhotosDragFormat = "BenchBook.BuildPhotos";
+
     /// <summary>Raised after references were moved or copied from outside the gallery, e.g. by dropping them on a project.</summary>
     public event EventHandler<(string Message, string ProjectId, bool CanShow)>? TransferNoticed;
 
@@ -108,6 +111,15 @@ public sealed class AppServices : IDisposable, IStoreAccess
 
     /// <summary>Selects a project in the main window. Set by the window.</summary>
     public Action<string>? ShowProject { get; set; }
+
+    /// <summary>Shows a paint in the catalogue. Set by the window.</summary>
+    public Action<string>? ShowPaint { get; set; }
+
+    /// <summary>Shows a project's Aftermarket tab. Set by the window.</summary>
+    public Action<string>? ShowAftermarket { get; set; }
+
+    /// <summary>Shows a project's Build Photos, with one photo selected. Set by the window.</summary>
+    public Action<string, string>? ShowBuildPhoto { get; set; }
 
     /// <summary>Shows a kit on the Kits screen. Set by the window.</summary>
     public Action<string>? ShowKit { get; set; }

@@ -17,16 +17,32 @@ internal sealed class ReferenceTagsDialog : ContentDialog
 {
     private readonly AppServices _services;
     private readonly List<string> _referenceIds;
+    /// <summary>Editing build photos' tags, not references'.</summary>
+    private readonly bool _photos;
     private readonly StackPanel _onTags = new() { Spacing = 4 };
     private readonly StackPanel _existing = new() { Spacing = 2 };
     private readonly TextBox _field = new() { Header = "Add Tags", PlaceholderText = "Type tags, separated with commas, then press Enter" };
     private readonly TextBlock _error = new() { TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
 
     public ReferenceTagsDialog(AppServices services, IReadOnlyList<ReferenceEntry> entries)
+        : this(services, entries.Select(e => e.Reference.Id).ToList(), false,
+               entries.Count == 1 ? $"Tags for “{ReferenceText.FallbackTitle(entries[0])}”" : $"Tags for {entries.Count:N0} References")
+    {
+    }
+
+    /// <summary>The same, for build photos.</summary>
+    public ReferenceTagsDialog(AppServices services, IReadOnlyList<BuildPhotoEntry> photos)
+        : this(services, photos.Select(e => e.Photo.Id).ToList(), true,
+               photos.Count == 1 ? $"Tags for “{Words.BuildPhotoTitle(photos[0].Photo)}”" : $"Tags for {photos.Count:N0} Photos")
+    {
+    }
+
+    private ReferenceTagsDialog(AppServices services, List<string> ids, bool photos, string title)
     {
         _services = services;
-        _referenceIds = entries.Select(e => e.Reference.Id).ToList();
-        Title = entries.Count == 1 ? $"Tags for “{ReferenceText.FallbackTitle(entries[0])}”" : $"Tags for {entries.Count:N0} References";
+        _referenceIds = ids;
+        _photos = photos;
+        Title = title;
         CloseButtonText = "Done";
         DefaultButton = ContentDialogButton.Close;
         _error.Foreground = (Brush)Application.Current.Resources["SystemFillColorCriticalBrush"];
@@ -56,9 +72,11 @@ internal sealed class ReferenceTagsDialog : ContentDialog
 
     private void Refresh()
     {
-        var entries = _services.WithStore(s => s.ReferenceEntries(_referenceIds));
+        var entries = _services.WithStore(s => _photos
+            ? s.BuildPhotoEntries(_referenceIds).Select(e => e.Tags).ToList()
+            : s.ReferenceEntries(_referenceIds).Select(e => e.Tags).ToList());
         var all = _services.WithStore(s => s.TagsByUsage());
-        var counts = entries.SelectMany(e => e.Tags).GroupBy(t => t.Id, Ids.Comparer).ToDictionary(g => g.Key, g => g.Count(), Ids.Comparer);
+        var counts = entries.SelectMany(e => e).GroupBy(t => t.Id, Ids.Comparer).ToDictionary(g => g.Key, g => g.Count(), Ids.Comparer);
 
         _onTags.Children.Clear();
         if (counts.Count == 0)
@@ -81,14 +99,14 @@ internal sealed class ReferenceTagsDialog : ContentDialog
             if (partly)
             {
                 var all2 = new Button { Content = "Add to All" };
-                ToolTipService.SetToolTip(all2, "On some of these references. Click to add it to all of them.");
-                all2.Click += (_, _) => Change(s => s.AddTag(tag.Id, _referenceIds));
+                ToolTipService.SetToolTip(all2, $"On some of these {(_photos ? "photos" : "references")}. Click to add it to all of them.");
+                all2.Click += (_, _) => Change(s => Add(s, tag.Id));
                 buttons.Children.Add(all2);
             }
             var remove = new Button { Content = new FontIcon { Glyph = "\uE711", FontSize = 12 } };
             ToolTipService.SetToolTip(remove, $"Remove “{tag.Name}”");
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(remove, $"Remove {tag.Name}");
-            remove.Click += (_, _) => Change(s => s.RemoveTag(tag.Id, _referenceIds));
+            remove.Click += (_, _) => Change(s => { if (_photos) s.RemoveTagFromBuildPhotos(tag.Id, _referenceIds); else s.RemoveTag(tag.Id, _referenceIds); });
             buttons.Children.Add(remove);
             Grid.SetColumn(buttons, 2);
             row.Children.Add(buttons);
@@ -104,7 +122,7 @@ internal sealed class ReferenceTagsDialog : ContentDialog
             content.Children.Add(new TextBlock { Text = tag.Name });
             var button = new Button { Content = content, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left, Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0) };
             ToolTipService.SetToolTip(button, $"Add “{tag.Name}”");
-            button.Click += (_, _) => Change(s => s.AddTag(tag.Id, _referenceIds));
+            button.Click += (_, _) => Change(s => Add(s, tag.Id));
             _existing.Children.Add(button);
         }
     }
@@ -114,7 +132,13 @@ internal sealed class ReferenceTagsDialog : ContentDialog
         var text = _field.Text;
         if (TagNames.Parse(text).Count == 0) return;
         _field.Text = "";
-        Change(s => s.AddTags(text, _referenceIds));
+        Change(s => { if (_photos) s.AddTagsToBuildPhotos(text, _referenceIds); else s.AddTags(text, _referenceIds); });
+    }
+
+    private void Add(LibraryStore store, string tagId)
+    {
+        if (_photos) store.AddTagToBuildPhotos(tagId, _referenceIds);
+        else store.AddTag(tagId, _referenceIds);
     }
 
     private void Change(Action<LibraryStore> change)

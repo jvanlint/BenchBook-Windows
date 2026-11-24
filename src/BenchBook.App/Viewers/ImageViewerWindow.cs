@@ -1,5 +1,6 @@
 using BenchBook.App.Services;
 using BenchBook.App.Views;
+using BenchBook.Core.BuildPhotos;
 using BenchBook.Core.Capture;
 using BenchBook.Core.Markups;
 using BenchBook.Core.Model;
@@ -24,9 +25,9 @@ internal sealed partial class ImageViewerWindow : Window
     private static readonly Dictionary<string, ImageViewerWindow> Open = new(Ids.Comparer);
 
     /// <summary>Shows the image, in the window already showing it if there is one, optionally zoomed to one of its notes.</summary>
-    public static void Show(AppServices services, ReferenceEntry entry, string? noteId = null)
+    public static void Show(AppServices services, ViewerImage entry, string? noteId = null)
     {
-        if (Open.TryGetValue(entry.Reference.Id, out var existing))
+        if (Open.TryGetValue(entry.Id, out var existing))
         {
             WindowFrames.Present(existing);
             if (noteId is not null) existing.FocusNote(noteId);
@@ -56,8 +57,8 @@ internal sealed partial class ImageViewerWindow : Window
     }
 
     private readonly AppServices _services;
-    private ReferenceEntry _entry;
-    private List<ReferenceEntry> _siblings = [];
+    private ViewerImage _entry;
+    private List<ViewerImage> _siblings = [];
 
     // The image, laid out at one unit per image pixel; zoom scales it.
     private readonly ScrollViewer _scroller = new()
@@ -104,11 +105,11 @@ internal sealed partial class ImageViewerWindow : Window
     private double _imageWidth, _imageHeight;
     private bool _loaded;
 
-    private ImageViewerWindow(AppServices services, ReferenceEntry entry)
+    private ImageViewerWindow(AppServices services, ViewerImage entry)
     {
         _services = services;
         _entry = entry;
-        Open[entry.Reference.Id] = this;
+        Open[entry.Id] = this;
         SystemBackdrop = new MicaBackdrop();
         AppWindow.SetIcon(App.IconPath);
         WindowFrames.Restore(this, services, "image", 1100, 760);
@@ -117,7 +118,7 @@ internal sealed partial class ImageViewerWindow : Window
         Closed += (_, _) =>
         {
             CommitTyping();
-            Open.Remove(_entry.Reference.Id);
+            Open.Remove(_entry.Id);
             WindowFrames.Save(this, services, "image");
         };
         _ = LoadAsync(entry, firstTime: true);
@@ -257,20 +258,20 @@ internal sealed partial class ImageViewerWindow : Window
 
     // MARK: Loading
 
-    private async Task LoadAsync(ReferenceEntry entry, bool firstTime)
+    private async Task LoadAsync(ViewerImage entry, bool firstTime)
     {
         CommitTyping();
         if (!firstTime && !ReferenceEquals(entry, _entry))
         {
-            Open.Remove(_entry.Reference.Id);
-            if (Open.TryGetValue(entry.Reference.Id, out var other) && other != this) other.Close();
-            Open[entry.Reference.Id] = this;
+            Open.Remove(_entry.Id);
+            if (Open.TryGetValue(entry.Id, out var other) && other != this) other.Close();
+            Open[entry.Id] = this;
         }
         _entry = entry;
         _selected = null;
         _loaded = false;
-        _siblings = _services.WithStore(s => s.ProjectReferences(entry.Reference.ProjectId)).Where(e => e.Reference.Kind == ReferenceKind.Image).ToList();
-        var index = _siblings.FindIndex(e => Ids.Comparer.Equals(e.Reference.Id, entry.Reference.Id));
+        _siblings = _services.WithStore(entry.Siblings);
+        var index = _siblings.FindIndex(entry.SameAs);
         _previous.IsEnabled = index > 0;
         _next.IsEnabled = index >= 0 && index < _siblings.Count - 1;
         _image.Source = null;
@@ -281,7 +282,7 @@ internal sealed partial class ImageViewerWindow : Window
         var path = asset is null ? null : _services.Location.FullPath(asset.OriginalRelativePath);
         if (asset is null || path is null)
         {
-            ShowProblem("Can't Show Image", "This reference has no saved image.", withOpen: false);
+            ShowProblem("Can't Show Image", entry.IsBuildPhoto ? "This build photo has no saved image." : "This reference has no saved image.", withOpen: false);
         }
         else if (!File.Exists(path))
         {
@@ -324,8 +325,8 @@ internal sealed partial class ImageViewerWindow : Window
             }
         }
 
-        var project = _services.WithStore(s => s.Project(entry.Reference.ProjectId));
-        var title = ReferenceText.FallbackTitle(entry);
+        var project = _services.WithStore(s => s.Project(entry.ProjectId));
+        var title = entry.Title;
         var subtitle = string.Join(" · ", new[] { project?.Name, _loaded ? $"{_imageWidth:N0} × {_imageHeight:N0}" : null }.Where(s => s is not null));
         Title = subtitle.Length > 0 ? $"{title} — {subtitle}" : title;
 
@@ -376,7 +377,7 @@ internal sealed partial class ImageViewerWindow : Window
 
     private void Step(int direction)
     {
-        var index = _siblings.FindIndex(e => Ids.Comparer.Equals(e.Reference.Id, _entry.Reference.Id));
+        var index = _siblings.FindIndex(_entry.SameAs);
         var target = index + direction;
         if (index < 0 || target < 0 || target >= _siblings.Count) return;
         _ = LoadAsync(_siblings[target], firstTime: false);
@@ -606,7 +607,7 @@ internal sealed partial class ImageViewerWindow : Window
         {
             case Drag.Draw:
                 var rect = NoteGeometry.FromDrag(_dragStart.X, _dragStart.Y, point.X, point.Y, _imageWidth, _imageHeight);
-                var added = _services.WithStore(s => ImageNotes.Add(s, _entry.Reference.Id, rect, _imageWidth, _imageHeight));
+                var added = _services.WithStore(s => _entry.AddNote(s, rect, _imageWidth, _imageHeight));
                 if (added is null) return; // A click, not a box.
                 _showBoxes.IsChecked = true;
                 Changed(added.Id, focusText: true);
@@ -625,7 +626,7 @@ internal sealed partial class ImageViewerWindow : Window
 
     private void LoadNotes()
     {
-        _notes = ImageNotes.Sorted(_services.WithStore(s => s.Markups(_entry.Reference.Id)));
+        _notes = _services.WithStore(_entry.Notes);
         _noteFields.Clear();
         _notesList.Children.Clear();
         if (_notes.Count == 0)
@@ -721,7 +722,7 @@ internal sealed partial class ImageViewerWindow : Window
 
     // MARK: Info panel
 
-    private async Task ShowInfo(ReferenceEntry entry, string? path)
+    private async Task ShowInfo(ViewerImage entry, string? path)
     {
         _infoList.Children.Clear();
         var asset = entry.Asset;
@@ -767,11 +768,13 @@ internal sealed partial class ImageViewerWindow : Window
         Section("Image", image);
         Section("Camera", camera);
 
-        var source = new List<(string, string)> { ("Added", Words.DateAndTime(entry.Reference.CapturedAt)) };
+        if (entry.Photo is { } photo)
+            Section("Build Photo", [("Stage", BuildPhotoText.StageName(photo.Photo)), ("Taken", Words.DateAndTime(photo.Photo.TakenAt))]);
+        var source = new List<(string, string)> { ("Added", Words.DateAndTime(entry.Added)) };
         if (asset?.OriginalFilename is { } name) source.Add(("File Name", name));
         if (asset is not null) source.Add(("Size", Shell.FormatBytes(asset.ByteCount)));
         Section("Source", source);
-        if (Uri.TryCreate(entry.Reference.SourcePageUrl ?? entry.Reference.OriginalResourceUrl, UriKind.Absolute, out var page))
+        if (Uri.TryCreate(entry.PageUrl, UriKind.Absolute, out var page))
             _infoList.Children.Add(new HyperlinkButton { Content = $"Page: {page.Host}", NavigateUri = page, Padding = new Thickness(0) });
         if (entry.Tags.Count > 0) Section("Tags", [("", string.Join(", ", entry.Tags.Select(t => t.Name)))]);
     }

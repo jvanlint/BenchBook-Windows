@@ -1,5 +1,6 @@
 using BenchBook.App.Services;
 using BenchBook.App.ViewModels;
+using BenchBook.Core.BuildPhotos;
 using BenchBook.Core.Capture;
 using BenchBook.Core.Model;
 using BenchBook.Core.Store;
@@ -21,7 +22,10 @@ public sealed record MatchLine(string Label, string Excerpt, IReadOnlyList<(int 
 /// <summary>A reference in a list of results, with what matched.</summary>
 public sealed record ResultRow(ReferenceEntry Entry, IReadOnlyList<MatchLine> Matches);
 
-/// <summary>References grouped by project: "F-16C — 3 references", then a row for each.</summary>
+/// <summary>A build photo in a list of results, with what matched.</summary>
+public sealed record PhotoResultRow(BuildPhotoEntry Entry, IReadOnlyList<MatchLine> Matches);
+
+/// <summary>References and build photos grouped by project: "F-16C — 3 references, 1 build photo", then a row for each.</summary>
 internal sealed class ReferenceGroupsView : UserControl
 {
     private readonly StackPanel _groups = new() { Spacing = 20 };
@@ -36,27 +40,35 @@ internal sealed class ReferenceGroupsView : UserControl
     /// <summary>Runs after a reference was edited from the list, so the owner can reload.</summary>
     public Func<Task>? Changed { get; set; }
 
-    public void Show(IReadOnlyList<ResultRow> rows)
+    /// <param name="photos">Build photos, listed after each project's references.</param>
+    public void Show(IReadOnlyList<ResultRow> rows, IReadOnlyList<PhotoResultRow>? photos = null)
     {
         _groups.Children.Clear();
+        photos ??= [];
         var projects = Services.WithStore(s => s.Projects()).ToDictionary(p => p.Id, Ids.Comparer);
-        var byProject = rows.GroupBy(r => r.Entry.Reference.ProjectId, Ids.Comparer)
-            .OrderBy(g => projects.TryGetValue(g.Key, out var p) ? p.Name : "", NaturalComparer.Instance);
-        foreach (var group in byProject)
+        var references = rows.ToLookup(r => r.Entry.Reference.ProjectId, Ids.Comparer);
+        var photoRows = photos.ToLookup(r => r.Entry.Photo.ProjectId, Ids.Comparer);
+        var projectIds = rows.Select(r => r.Entry.Reference.ProjectId).Concat(photos.Select(p => p.Entry.Photo.ProjectId)).Distinct(Ids.Comparer)
+            .OrderBy(id => projects.TryGetValue(id, out var p) ? p.Name : "", NaturalComparer.Instance);
+        foreach (var projectId in projectIds)
         {
-            var name = projects.TryGetValue(group.Key, out var project) ? project.Name : "Project";
-            var count = group.Count();
+            var name = projects.TryGetValue(projectId, out var project) ? project.Name : "Project";
+            var counts = new List<string>();
+            if (references[projectId].Any()) counts.Add(Words.Count(references[projectId].Count(), "reference"));
+            if (photoRows[projectId].Any()) counts.Add(Words.Count(photoRows[projectId].Count(), "build photo"));
             var section = new StackPanel { Spacing = 6 };
             section.Children.Add(new TextBlock
             {
-                Text = $"{name} — {count:N0} {(count == 1 ? "reference" : "references")}",
+                Text = $"{name} — {string.Join(", ", counts)}",
                 Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
             });
             var list = new ListView { SelectionMode = ListViewSelectionMode.Single, IsItemClickEnabled = true };
-            foreach (var row in group) list.Items.Add(Row(row));
+            foreach (var row in references[projectId]) list.Items.Add(Row(row));
+            foreach (var row in photoRows[projectId]) list.Items.Add(PhotoRow(row));
             list.ItemClick += async (_, e) =>
             {
                 if (e.ClickedItem is FrameworkElement { Tag: ResultRow row }) await Open(row.Entry);
+                else if (e.ClickedItem is FrameworkElement { Tag: PhotoResultRow photo }) Viewers.ImageViewerWindow.Show(Services, photo.Entry);
             };
             list.ContextRequested += List_ContextRequested;
             section.Children.Add(list);
@@ -73,7 +85,15 @@ internal sealed class ReferenceGroupsView : UserControl
     private void List_ContextRequested(UIElement sender, ContextRequestedEventArgs args)
     {
         var element = args.OriginalSource as DependencyObject;
-        while (element is not null && element is not FrameworkElement { Tag: ResultRow }) element = VisualTreeHelper.GetParent(element);
+        while (element is not null && element is not FrameworkElement { Tag: ResultRow or PhotoResultRow }) element = VisualTreeHelper.GetParent(element);
+        if (element is FrameworkElement { Tag: PhotoResultRow photo } photoTarget)
+        {
+            args.Handled = true;
+            var photoMenu = PhotoMenu(photo.Entry);
+            if (args.TryGetPosition(sender, out var at)) photoMenu.ShowAt(sender, new FlyoutShowOptions { Position = at });
+            else photoMenu.ShowAt(photoTarget);
+            return;
+        }
         if (element is not FrameworkElement { Tag: ResultRow row } target) return;
         args.Handled = true;
         var entry = row.Entry;
@@ -100,6 +120,83 @@ internal sealed class ReferenceGroupsView : UserControl
 
         if (args.TryGetPosition(sender, out var point)) menu.ShowAt(sender, new FlyoutShowOptions { Position = point });
         else menu.ShowAt(target);
+    }
+
+    /// <summary>Right-click a build photo: Open, Show in Project, Edit Details….</summary>
+    private MenuFlyout PhotoMenu(BuildPhotoEntry entry)
+    {
+        var menu = new MenuFlyout();
+        var open = new MenuFlyoutItem { Text = "Open", Icon = new SymbolIcon(Symbol.OpenFile) };
+        open.Click += (_, _) => Viewers.ImageViewerWindow.Show(Services, entry);
+        menu.Items.Add(open);
+        var show = new MenuFlyoutItem { Text = "Show in Project" };
+        show.Click += (_, _) => Services.ShowBuildPhoto?.Invoke(entry.Photo.ProjectId, entry.Photo.Id);
+        menu.Items.Add(show);
+        var edit = new MenuFlyoutItem { Text = "Edit Details…", Icon = new SymbolIcon(Symbol.Edit) };
+        edit.Click += async (_, _) =>
+        {
+            var dialog = new BuildPhotoDetailsDialog(Services, entry) { XamlRoot = XamlRoot };
+            await dialog.ShowAsync();
+            if (dialog.Saved && Changed is not null) await Changed();
+        };
+        menu.Items.Add(edit);
+        return menu;
+    }
+
+    /// <summary>Its thumbnail, caption or date, "Build Photo · WIP" and its tags, then a line per matching box.</summary>
+    private FrameworkElement PhotoRow(PhotoResultRow row)
+    {
+        var entry = row.Entry;
+        var grid = new Grid { ColumnSpacing = 12, Padding = new Thickness(0, 6, 0, 6), Tag = row };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var picture = new Grid { Width = 64, Height = 64, CornerRadius = new CornerRadius(6), Background = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"], VerticalAlignment = VerticalAlignment.Top };
+        var image = new Image { Stretch = Stretch.UniformToFill };
+        var glyph = new FontIcon { Glyph = "\uE91B", FontSize = 22, Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] };
+        picture.Children.Add(image);
+        picture.Children.Add(glyph);
+        grid.Children.Add(picture);
+        _ = LoadPhoto(entry, image, glyph);
+
+        var title = Words.BuildPhotoTitle(entry.Photo);
+        var details = $"Build Photo · {BuildPhotoText.StageName(entry.Photo)}" + (entry.Tags.Count > 0 ? " · " + string.Join(", ", entry.Tags.Select(t => t.Name)) : "");
+        var text = new StackPanel { Spacing = 2 };
+        text.Children.Add(new TextBlock { Text = title, TextTrimming = TextTrimming.CharacterEllipsis });
+        text.Children.Add(new TextBlock
+        {
+            Text = details, Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"], TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+        foreach (var match in row.Matches.Take(6))
+        {
+            var block = MatchText(match);
+            if (match.MarkupId is not { } markupId) { text.Children.Add(block); continue; }
+            // A matching box opens the photo at that box.
+            var open = new HyperlinkButton { Content = block, Padding = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Left };
+            ToolTipService.SetToolTip(open, $"Open at {match.Label}");
+            open.Click += (_, _) => Viewers.ImageViewerWindow.Show(Services, entry, markupId);
+            text.Children.Add(open);
+        }
+        Grid.SetColumn(text, 1);
+        grid.Children.Add(text);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(grid, $"{title}, {details}");
+        return grid;
+    }
+
+    private async Task LoadPhoto(BuildPhotoEntry entry, Image image, FontIcon glyph)
+    {
+        if (entry.Asset is not { } asset || await Services.Thumbnails.PathFor(asset) is not { } path) return;
+        try
+        {
+            var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage { DecodePixelWidth = 128, DecodePixelType = Microsoft.UI.Xaml.Media.Imaging.DecodePixelType.Physical };
+            using (var stream = File.OpenRead(path)) await bitmap.SetSourceAsync(stream.AsRandomAccessStream());
+            image.Source = bitmap;
+            glyph.Visibility = Visibility.Collapsed;
+        }
+        catch (Exception)
+        {
+            // A damaged thumbnail: the row keeps its icon.
+        }
     }
 
     private FrameworkElement Row(ResultRow row)

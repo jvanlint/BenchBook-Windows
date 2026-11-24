@@ -75,6 +75,24 @@ public sealed partial class MainWindow : Window
             if (active) App.Inbox?.Import();
         };
         services.ShowProject = ShowProject;
+        services.ShowPaint = id => { EndSearch(); ShowPaint(id); };
+        services.ShowAftermarket = projectId =>
+        {
+            ShowProject(projectId);
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+            {
+                if (ContentFrame.Content is ProjectPage page) page.ShowAftermarket();
+            });
+        };
+        services.ShowBuildPhoto = (projectId, photoId) =>
+        {
+            ShowProject(projectId);
+            // Once the project's page is showing.
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+            {
+                if (ContentFrame.Content is ProjectPage page) page.RevealBuildPhoto(photoId);
+            });
+        };
         services.ShowKit = ShowKit;
         services.NewProjectFromKit = kit => _ = NewProject(kit.Name, new[] { kit });
 
@@ -554,16 +572,32 @@ public sealed partial class MainWindow : Window
             e.Data.SetData(AppServices.TagDragFormat, tag.Id);
             e.Data.RequestedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
         };
-        // References dropped here get the tag.
+        // References or build photos dropped here get the tag.
         item.DragOver += (_, e) =>
         {
-            if (!e.DataView.Contains(AppServices.ReferencesDragFormat)) return;
+            if (!e.DataView.Contains(AppServices.ReferencesDragFormat) && !e.DataView.Contains(AppServices.BuildPhotosDragFormat)) return;
             // Must be one the gallery offers (move or copy), or Windows refuses the drop.
             e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
             e.DragUIOverride.Caption = $"Tag with “{tag.Name}”";
         };
         item.Drop += async (_, e) =>
         {
+            if (e.DataView.Contains(AppServices.BuildPhotosDragFormat))
+            {
+                if (await e.DataView.GetDataAsync(AppServices.BuildPhotosDragFormat) is not string text) return;
+                var photos = text.Split(',', StringSplitOptions.RemoveEmptyEntries);
+                try
+                {
+                    _services.WithStore(s => { s.AddTagToBuildPhotos(tag.Id, photos); return 0; });
+                }
+                catch (Microsoft.Data.Sqlite.SqliteException error)
+                {
+                    await ShowMessage("Couldn't Change Tags", error.Message);
+                    return;
+                }
+                _services.NotifyLibraryChanged();
+                return;
+            }
             if (await DraggedReferences(e) is not { } ids) return;
             try
             {
@@ -576,10 +610,10 @@ public sealed partial class MainWindow : Window
             }
             _services.NotifyLibraryChanged();
         };
-        AutomationName(item, $"{tag.Name}, {usage.References:N0} {(usage.References == 1 ? "reference" : "references")}");
+        AutomationName(item, $"{tag.Name}, {usage.Summary}");
 
         var menu = new MenuFlyout();
-        var show = new MenuFlyoutItem { Text = "Show References" };
+        var show = new MenuFlyoutItem { Text = "Show Tagged Items" };
         show.Click += (_, _) => ShowTag(tag.Id);
         menu.Items.Add(show);
         var rename = new MenuFlyoutItem { Text = "Rename…" };
