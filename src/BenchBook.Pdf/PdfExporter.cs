@@ -53,7 +53,7 @@ public static class PdfExporter
                         try
                         {
                             foreach (var markup in group)
-                                Draw(doc, page, markup, numbers[markup.Id], font, boldHandle, measure);
+                                Draw(doc, page, document.Pages[group.Key].Crop, markup, numbers[markup.Id], font, boldHandle, measure);
                             Pdfium.FPDFPage_GenerateContent(page);
                         }
                         finally
@@ -89,7 +89,7 @@ public static class PdfExporter
 
     // MARK: Markups
 
-    private static void Draw(IntPtr doc, IntPtr page, Markup markup, int number, IntPtr font, IntPtr bold, MeasureText measure)
+    private static void Draw(IntPtr doc, IntPtr page, PageRect crop, Markup markup, int number, IntPtr font, IntPtr bold, MeasureText measure)
     {
         var (r, g, b) = Rgb(markup.Color);
         switch (markup.Kind)
@@ -156,7 +156,7 @@ public static class PdfExporter
         }
 
         // Highlights and arrows with text keep their number; the list says what it means.
-        if (PdfMarkups.IsListed(markup)) Badge(doc, page, bold, number, MarkupGeometry.BadgeCentre(markup), markup.Color, measure);
+        if (PdfMarkups.IsListed(markup)) Badge(doc, page, bold, number, MarkupGeometry.BadgeCentre(markup, crop), markup.Color, measure);
     }
 
     private static uint Blend(byte channel) => (uint)Math.Round(channel + (255 - channel) * 0.6);

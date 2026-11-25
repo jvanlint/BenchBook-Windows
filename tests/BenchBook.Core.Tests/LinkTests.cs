@@ -13,10 +13,15 @@ internal sealed class FakeFetcher : LinkFetcher
     public bool Offline { get; set; }
     public List<string> Requested { get; } = [];
 
-    public override Task<FetchedResponse> Get(Uri url, string accept, bool youTubeConsent = false, int limit = 20 * 1024 * 1024, CancellationToken cancellation = default)
+    /// <summary>Redirects: from one address to another, as a 302.</summary>
+    public Dictionary<string, string> Redirects { get; } = [];
+
+    protected override Task<FetchedResponse> Send(Uri url, string accept, bool youTubeConsent, int limit, CancellationToken cancellation)
     {
         Requested.Add(url.AbsoluteUri);
         if (Offline) throw new LinkUnavailableException();
+        if (Redirects.TryGetValue(url.AbsoluteUri, out var target))
+            return Task.FromResult(new FetchedResponse(302, url, "text/html", [], new Uri(target, UriKind.RelativeOrAbsolute)));
         return Task.FromResult(Pages.TryGetValue(url.AbsoluteUri, out var page)
             ? new FetchedResponse(page.Status, url, page.Type, page.Body.Take(limit).ToArray())
             : new FetchedResponse(404, url, "text/html", []));

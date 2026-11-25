@@ -41,6 +41,8 @@ public sealed record CaptureEnvelope
     public IReadOnlyList<string> Tags { get; init; } = [];
     public string? Note { get; init; }
     public IReadOnlyList<EnvelopeItem> Items { get; init; } = [];
+    /// <summary>The page the files came from, such as the page an image was on, if known (as the Mac's version 2 envelopes say).</summary>
+    public string? PageUrl { get; init; }
 
     /// <summary>An envelope item for a captured item whose file, if any, is already in the envelope's folder.</summary>
     public static EnvelopeItem ItemFor(CapturedItem item) => item switch
@@ -53,12 +55,13 @@ public sealed record CaptureEnvelope
 
     /// <summary>
     /// The items, with files in <paramref name="folder"/>. Null for an item that
-    /// can't be used, such as a file name that would leave the folder.
+    /// can't be used: a file name that would leave the folder (a "/", ".", ".."
+    /// or nothing), or a file that's a link to somewhere else.
     /// </summary>
     public List<CapturedItem?> CapturedItems(string folder) => Items.Select(item => item.Kind switch
     {
-        "file" when item.Name is { } name && LibraryPaths.IsSafeName(name) && !name.Contains('/')
-            => new CapturedItem.File(Path.Combine(folder, name), item.OriginalFilename, item.ResourceUrl),
+        "file" when item.Name is { } name && LibraryPaths.IsSafeName(name) && !name.Contains('/') && !CaptureInbox.IsLink(Path.Combine(folder, name))
+            => new CapturedItem.File(Path.Combine(folder, name), item.OriginalFilename, item.ResourceUrl, PageUrl),
         "link" when item.Url is { } url => new CapturedItem.Link(url, item.Title),
         "text" when item.Text is { } text => new CapturedItem.Text(text, item.SourceUrl, item.Title),
         _ => (CapturedItem?)null,
@@ -68,6 +71,25 @@ public sealed record CaptureEnvelope
 /// <summary>Reads and writes envelopes in the inbox folder.</summary>
 public sealed class CaptureInbox(string folder)
 {
+    /// <summary>Envelopes are a few kilobytes; anything bigger isn't one.</summary>
+    public const long MaxEnvelopeBytes = 1_000_000;
+
+    /// <summary>
+    /// True for a symbolic link or junction. The share window only ever writes
+    /// real files and folders, so a link in the inbox wasn't put there by it.
+    /// </summary>
+    public static bool IsLink(string path)
+    {
+        try
+        {
+            return File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     internal static readonly JsonSerializerOptions Json = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -107,7 +129,7 @@ public sealed class CaptureInbox(string folder)
     {
         if (!Directory.Exists(Folder)) return [];
         return new DirectoryInfo(Folder).EnumerateDirectories()
-            .Where(d => Ids.IsValid(d.Name))
+            .Where(d => !d.Attributes.HasFlag(FileAttributes.ReparsePoint) && Ids.IsValid(d.Name))
             .OrderBy(d => d.CreationTimeUtc)
             .Select(d => d.FullName)
             .ToList();
@@ -118,7 +140,10 @@ public sealed class CaptureInbox(string folder)
     {
         try
         {
-            return JsonSerializer.Deserialize<CaptureEnvelope>(File.ReadAllText(Path.Combine(envelopeFolder, CaptureEnvelope.FileName)), Json);
+            // Only a real file of envelope size.
+            var file = new FileInfo(Path.Combine(envelopeFolder, CaptureEnvelope.FileName));
+            if (!file.Exists || file.Attributes.HasFlag(FileAttributes.ReparsePoint) || file.Length > MaxEnvelopeBytes) return null;
+            return JsonSerializer.Deserialize<CaptureEnvelope>(File.ReadAllText(file.FullName), Json);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
         {

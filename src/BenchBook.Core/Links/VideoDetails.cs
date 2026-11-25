@@ -39,7 +39,7 @@ public static partial class VideoDetails
         {
             try
             {
-                var response = await fetcher.Get(url, "image/*", youTubeConsent: true, cancellation: cancellation);
+                var response = await fetcher.Get(url, "image/*", FetchRules.Video, youTubeConsent: true, cancellation: cancellation);
                 if (response.Status == 200 && images.IsImage(response.Body)) return response.Body;
             }
             catch (LinkUnavailableException)
@@ -55,13 +55,13 @@ public static partial class VideoDetails
         var oEmbedUrl = new Uri($"https://www.youtube.com/oembed?url={Uri.EscapeDataString(watch.AbsoluteUri)}&format=json");
 
         // oEmbed refuses videos that can't be embedded, but the watch page still has their details.
-        var oEmbed = await fetcher.Get(oEmbedUrl, "application/json", youTubeConsent: true, cancellation: cancellation);
+        var oEmbed = await fetcher.Get(oEmbedUrl, "application/json", FetchRules.Video, youTubeConsent: true, cancellation: cancellation);
         if (oEmbed.Status >= 500) throw new LinkUnavailableException();
         var info = oEmbed.Status == 200 ? ParseOEmbed(oEmbed.Body) ?? new VideoInfo() : new VideoInfo();
 
         try
         {
-            var page = await fetcher.Get(watch, "text/html", youTubeConsent: true, cancellation: cancellation);
+            var page = await fetcher.Get(watch, "text/html", FetchRules.Video, youTubeConsent: true, cancellation: cancellation);
             if (page.Status == 200)
             {
                 var parsed = ParseYouTubePage(LinkFetcher.Text(page.Body));
@@ -93,7 +93,7 @@ public static partial class VideoDetails
     private static async Task<VideoInfo> Vimeo(LinkFetcher fetcher, string id, CancellationToken cancellation)
     {
         var url = new Uri($"https://vimeo.com/api/oembed.json?url={Uri.EscapeDataString($"https://vimeo.com/{id}")}&width=1280");
-        var response = await fetcher.Get(url, "application/json", cancellation: cancellation);
+        var response = await fetcher.Get(url, "application/json", FetchRules.Video, cancellation: cancellation);
         if (response.Status is >= 400 and < 500) throw new LinkNotFoundException();
         if (response.Status is < 200 or >= 300) throw new LinkUnavailableException();
         return ParseOEmbed(response.Body) ?? throw new LinkNotFoundException();

@@ -100,6 +100,21 @@ public static class MarkupGeometry
             ? new PagePoint(markup.X, markup.Y + markup.Height)
             : new PagePoint(markup.Points[0], markup.Points[1]);
 
+    /// <summary>
+    /// Where the badge is drawn: moved inward just enough for the whole circle to
+    /// be on the page, so its centre is at least half the badge from every edge,
+    /// or at the page's centre on a page narrower than the badge. The stored
+    /// points don't move (behaviour.md, "PDF markups").
+    /// </summary>
+    public static PagePoint BadgeCentre(Markup markup, PageRect page)
+    {
+        var centre = BadgeCentre(markup);
+        var radius = BadgeDiameter / 2;
+        static double Inside(double value, double low, double high, double radius) =>
+            high - low < radius * 2 ? (low + high) / 2 : Math.Clamp(value, low + radius, high - radius);
+        return new PagePoint(Inside(centre.X, page.X, page.Right, radius), Inside(centre.Y, page.Y, page.Top, radius));
+    }
+
     public static List<PagePoint> PointsOf(Markup markup)
     {
         var points = new List<PagePoint>();

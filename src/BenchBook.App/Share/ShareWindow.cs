@@ -227,6 +227,7 @@ internal sealed class ShareWindow : Window
             Tags = TagNames.Parse(_tags.Text),
             Note = string.IsNullOrWhiteSpace(_note.Text) ? null : _note.Text.Trim(),
             Items = _items.Select(CaptureEnvelope.ItemFor).ToList(),
+            PageUrl = _items.OfType<CapturedItem.File>().Select(f => f.PageUrl).FirstOrDefault(p => p is not null),
         };
         try
         {

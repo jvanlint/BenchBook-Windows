@@ -678,7 +678,8 @@ internal sealed partial class PdfViewerWindow : Window
             overlay.Children.Add(outline);
         }
         if (number <= 0) return;
-        var centre = ToOverlay(info, MarkupGeometry.BadgeCentre(markup));
+        // Kept wholly on the page, as in export.
+        var centre = ToOverlay(info, MarkupGeometry.BadgeCentre(markup, info.Crop));
         var d = MarkupGeometry.BadgeDiameter;
         var badge = new Grid { Width = d, Height = d };
         badge.Children.Add(new Ellipse

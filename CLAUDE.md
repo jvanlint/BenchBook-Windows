@@ -161,10 +161,17 @@ Windows project, not there). As of Mac 1.3.0 (`9c68bc9`, 2026-11-24):
   checksums redone), and build photos in Search, tag pages and the Tags
   screen ("Used By"). Windows leaves out Import from Photos… and Continuity
   Camera; Space opens the photo in its default app, as there's no Quick Look.
-- **Not yet:** project export and import
-  (`.benchbookproject`), the safety changes to link previews and restore
-  (#15), one link per project (#7), and PDF markup badges kept on the page
-  (#39).
+- **Done:** the safety changes (#15): link previews stop reading at their
+  limits and follow redirects, and fetch preview images, icons and posters,
+  only from public web addresses (`Links\WebAddresses.cs`, `FetchRules`;
+  redirects are followed one at a time in `LinkFetcher.Get`). The capture
+  inbox skips links and envelopes over 1 MB. Restore already checked manifest
+  paths. One link per project (#7): exactly the same address is a duplicate
+  (`ReferenceWithLink`), and a file keeps the page it came from (a share's
+  `ContentSourceWebLink`, else the HTML format's `SourceURL`). PDF markup
+  badges kept on the page (#39, `MarkupGeometry.BadgeCentre(markup, page)`).
+- **Not yet:** project export and import (`.benchbookproject`), and the Edge
+  and Chrome extension the spec plans for a later phase.
 
 ## Releasing
 

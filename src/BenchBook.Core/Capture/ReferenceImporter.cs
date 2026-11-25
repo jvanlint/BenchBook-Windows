@@ -14,7 +14,8 @@ public abstract record CapturedItem
 {
     /// <param name="OriginalFilename">The name the user would recognise. The file at Path may be a temporary copy.</param>
     /// <param name="ResourceUrl">The web address the file came from, when known.</param>
-    public sealed record File(string Path, string? OriginalFilename = null, string? ResourceUrl = null) : CapturedItem;
+    /// <param name="PageUrl">The page the file came from, such as the page an image was on, when known. It becomes the reference's source page.</param>
+    public sealed record File(string Path, string? OriginalFilename = null, string? ResourceUrl = null, string? PageUrl = null) : CapturedItem;
 
     public sealed record Link(string Url, string? Title = null) : CapturedItem;
 
@@ -104,6 +105,8 @@ public sealed class ReferenceImporter(IStoreAccess store, LibraryLocation locati
         reference.AssetId = assetId;
         reference.Note = Trimmed(note);
         reference.OriginalResourceUrl = Trimmed(item.ResourceUrl);
+        // The page the file came from is its source page (behaviour.md, "Capture").
+        reference.SourcePageUrl = IsWebLink(item.PageUrl, out var page) ? page.AbsoluteUri : null;
         try
         {
             store.With(s => { s.InsertReference(reference, asset, [], tags); return 0; });
@@ -119,6 +122,13 @@ public sealed class ReferenceImporter(IStoreAccess store, LibraryLocation locati
     private CaptureOutcome ImportLink(CapturedItem.Link item, string projectId, IReadOnlyList<string> tags, string? note)
     {
         if (!IsWebLink(item.Url, out var url)) throw CaptureException.InvalidLink(item.Url);
+        // A project holds each link once: exactly the same address is a duplicate.
+        // Any difference, such as another timestamp, is another link.
+        if (store.With(s => s.ReferenceWithLink(projectId, url.AbsoluteUri)) is { } existing)
+        {
+            var entry = store.With(s => s.ReferenceEntries([existing.Id])).Single();
+            return new CaptureOutcome.Duplicate(existing, ReferenceText.FallbackTitle(entry));
+        }
         var video = VideoLink.Parse(url);
         var now = IsoDate.Now();
         var reference = NewReference(projectId, video is null ? ReferenceKind.Webpage : ReferenceKind.VideoLink, now);

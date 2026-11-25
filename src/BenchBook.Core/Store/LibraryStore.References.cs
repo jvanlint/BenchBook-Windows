@@ -86,6 +86,12 @@ public sealed partial class LibraryStore
         return keepOrder ? entries.ToList() : entries.OrderByDescending(e => e.Reference.CapturedAt).ToList();
     }
 
+    /// <summary>The project's webpage or video link with exactly this address, if any.</summary>
+    public Reference? ReferenceWithLink(string projectId, string url) =>
+        ReferencesTable.ReadWhere(_connection,
+            "projectId = $project AND kind IN ('webpage', 'videoLink') AND sourcePageUrl = $url",
+            ("$project", projectId), ("$url", url)).FirstOrDefault();
+
     /// <summary>The project's reference whose file has this hash, if any.</summary>
     public Reference? ReferenceWithFile(string projectId, string sha256) =>
         ReferencesTable.ReadWhere(_connection,

@@ -30,11 +30,10 @@ public static partial class PageDetails
     public const int MinImagePixels = 100;
     /// <summary>Smaller icons look blurry scaled up in a tile.</summary>
     public const int MinIconPixels = 64;
-    private const int PageLimit = 1_000_000;
 
     public static async Task<PageInfo> Fetch(LinkFetcher fetcher, Uri url, CancellationToken cancellation = default)
     {
-        var response = await fetcher.Get(url, "text/html,application/xhtml+xml,*/*;q=0.8", limit: PageLimit, cancellation: cancellation);
+        var response = await fetcher.Get(url, "text/html,application/xhtml+xml,*/*;q=0.8", FetchRules.Page, cancellation: cancellation);
         if (response.Status is >= 400 and < 500) throw new LinkNotFoundException();
         if (response.Status is < 200 or >= 300) throw new LinkUnavailableException();
 
@@ -63,7 +62,7 @@ public static partial class PageDetails
     {
         try
         {
-            var response = await fetcher.Get(url, "image/*", cancellation: cancellation);
+            var response = await fetcher.Get(url, "image/*", FetchRules.PageImage, cancellation: cancellation);
             return response.Status is >= 200 and < 300 ? images.Scale(response.Body, min, max) : null;
         }
         catch (LinkUnavailableException)

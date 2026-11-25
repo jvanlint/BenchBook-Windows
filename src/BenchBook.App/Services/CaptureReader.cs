@@ -80,6 +80,8 @@ internal static class CaptureReader
     {
         var items = new List<CapturedItem>();
         var skipped = new List<string>();
+        // The page files came from, such as the page an image was dragged from, when the source says.
+        var page = await PageOf(data);
         if (data.Contains(StandardDataFormats.StorageItems))
         {
             foreach (var item in await data.GetStorageItemsAsync())
@@ -106,7 +108,7 @@ internal static class CaptureReader
                             continue;
                         }
                     }
-                    items.Add(new CapturedItem.File(path, file.Name));
+                    items.Add(new CapturedItem.File(path, file.Name, PageUrl: page));
                 }
                 else
                 {
@@ -155,7 +157,7 @@ internal static class CaptureReader
                 encoder.SetSoftwareBitmap(bitmap);
                 await encoder.FlushAsync();
             }
-            items.Add(new CapturedItem.File(Path.Combine(temporary, name), shown));
+            items.Add(new CapturedItem.File(Path.Combine(temporary, name), shown, PageUrl: page));
         }
         else if (data.Contains(StandardDataFormats.Text))
         {
@@ -165,5 +167,28 @@ internal static class CaptureReader
                 : new CapturedItem.Text(text));
         }
         return (items, skipped);
+    }
+
+    /// <summary>
+    /// The web page the content came from: the page a share names, else the
+    /// SourceURL in the HTML format browsers put beside a dragged or copied image.
+    /// </summary>
+    private static async Task<string?> PageOf(DataPackageView data)
+    {
+        if (data.Properties.ContentSourceWebLink is { } link && ReferenceImporter.IsWebLink(link.OriginalString, out var shared)) return shared.AbsoluteUri;
+        if (!data.Contains(StandardDataFormats.Html)) return null;
+        try
+        {
+            var html = await data.GetHtmlFormatAsync();
+            // The clipboard's HTML format starts with "Name:value" lines, one of them "SourceURL:https://…".
+            foreach (var line in html.Split('\n').TakeWhile(l => !l.TrimStart().StartsWith('<')))
+                if (line.StartsWith("SourceURL:", StringComparison.OrdinalIgnoreCase) && ReferenceImporter.IsWebLink(line["SourceURL:".Length..].Trim(), out var source))
+                    return source.AbsoluteUri;
+        }
+        catch (Exception error) when (error is System.Runtime.InteropServices.COMException or InvalidOperationException)
+        {
+            // No page, then.
+        }
+        return null;
     }
 }
