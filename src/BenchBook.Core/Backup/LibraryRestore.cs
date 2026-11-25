@@ -31,13 +31,6 @@ public static class LibraryRestore
     private const long ManifestLimit = 64L * 1024 * 1024;
     private const string PreviousPrefix = "BenchBook Before Restore ";
 
-    // Unix file types in the high half of a ZIP entry's external attributes.
-    private const int UnixTypeMask = 0xF000;
-    private const int UnixDirectory = 0x4000;
-    private const int UnixRegular = 0x8000;
-
-    private static readonly byte[] ZipSignature = [0x50, 0x4B, 0x03, 0x04];
-
     public static string StagingFolder(LibraryLocation location) => Path.Combine(location.AppFolder, "BenchBook Restore");
 
     private static string PendingPath(LibraryLocation location) => Path.Combine(StagingFolder(location), "pending.json");
@@ -81,7 +74,7 @@ public static class LibraryRestore
 
         using (archive)
         {
-            var entries = CheckEntries(archive);
+            var entries = ZipChecks.Files(archive, () => BackupException.NotABackup());
             if (!entries.TryGetValue(BackupWriter.ManifestName, out var manifestEntry)) throw BackupException.NotABackup();
             var manifest = ReadManifest(manifestEntry);
 
@@ -89,7 +82,7 @@ public static class LibraryRestore
             var listed = new Dictionary<string, BackupFile>(StringComparer.OrdinalIgnoreCase);
             foreach (var file in manifest.Files)
             {
-                if (!IsBackupFilePath(file.Path) || file.Size < 0 || !IsSha256(file.Sha256) || !listed.TryAdd(file.Path, file))
+                if (!ZipChecks.IsFilePath(file.Path) || file.Size < 0 || !ZipChecks.IsSha256(file.Sha256) || !listed.TryAdd(file.Path, file))
                     throw BackupException.NotABackup();
             }
             if (!listed.ContainsKey(BackupWriter.LibraryJsonName)) throw BackupException.NotABackup();
@@ -100,7 +93,7 @@ public static class LibraryRestore
             {
                 cancellation.ThrowIfCancellationRequested();
                 if (!entries.TryGetValue(file.Path, out var entry)) throw BackupException.Damaged(file.Path);
-                Extract(entry, file, Path.Combine(staging, file.Path.Replace('/', Path.DirectorySeparatorChar)));
+                ZipChecks.Extract(entry, file, Path.Combine(staging, file.Path.Replace('/', Path.DirectorySeparatorChar)), BackupException.Damaged);
             }
 
             var snapshot = ReadLibrary(Path.Combine(staging, BackupWriter.LibraryJsonName));
@@ -143,66 +136,14 @@ public static class LibraryRestore
         Span<byte> start = stackalloc byte[4];
         var read = stream.ReadAtLeast(start, 4, throwOnEndOfStream: false);
         stream.Position = 0;
-        if (read == 4 && start.SequenceEqual(ZipSignature)) return stream;
+        if (read == 4 && start.SequenceEqual(ZipChecks.ZipSignature)) return stream;
         stream.Dispose();
         throw read == 0 ? BackupException.NotABackup() : BackupException.FormatOne();
     }
 
-    /// <summary>
-    /// Every entry must be a plain file or folder with a safe name, and no two
-    /// may have the same name ignoring case. Returns the files by name.
-    /// </summary>
-    private static Dictionary<string, ZipArchiveEntry> CheckEntries(ZipArchive archive)
-    {
-        var files = new Dictionary<string, ZipArchiveEntry>(StringComparer.OrdinalIgnoreCase);
-        var folders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var entry in archive.Entries)
-        {
-            var name = entry.FullName;
-            var unixType = (entry.ExternalAttributes >> 16) & UnixTypeMask;
-            var isFolder = name.EndsWith('/');
-            if (unixType != 0 && unixType != (isFolder ? UnixDirectory : UnixRegular)) throw BackupException.NotABackup();
-
-            var path = isFolder ? name[..^1] : name;
-            if (!LibraryPaths.IsSafeRelativePath(path)) throw BackupException.NotABackup();
-            if (isFolder)
-            {
-                if (path is not ("Library" or "Library/Originals" or "Library/Posters") || !folders.Add(path))
-                    throw BackupException.NotABackup();
-                continue;
-            }
-            if (!files.TryAdd(name, entry)) throw BackupException.NotABackup();
-        }
-        return files;
-    }
-
-    /// <summary>library.json, or one file directly in Library/Originals or Library/Posters.</summary>
-    private static bool IsBackupFilePath(string path)
-    {
-        if (path == BackupWriter.LibraryJsonName) return true;
-        if (!LibraryPaths.IsSafeRelativePath(path)) return false;
-        foreach (var folder in new[] { "Library/Originals/", "Library/Posters/" })
-        {
-            if (!path.StartsWith(folder, StringComparison.Ordinal)) continue;
-            var name = path[folder.Length..];
-            return name.Length > 0 && !name.Contains('/') && !name.StartsWith('.');
-        }
-        return false;
-    }
-
-    private static bool IsSha256(string text) =>
-        text.Length == 64 && text.All(c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f'));
-
     private static BackupManifest ReadManifest(ZipArchiveEntry entry)
     {
-        if (entry.Length > ManifestLimit) throw BackupException.NotABackup();
-        byte[] bytes;
-        using (var input = entry.Open())
-        using (var buffer = new MemoryStream())
-        {
-            CopyAtMost(input, buffer, ManifestLimit);
-            bytes = buffer.ToArray();
-        }
+        var bytes = ZipChecks.Read(entry, ManifestLimit, () => BackupException.NotABackup());
 
         // Read the format on its own first, so a newer layout gets the right message.
         try
@@ -211,39 +152,14 @@ public static class LibraryRestore
             if (!document.RootElement.TryGetProperty("format", out var format) || !format.TryGetInt32(out var number) || number < 1)
                 throw BackupException.NotABackup();
             if (number > BackupManifest.CurrentFormat) throw BackupException.NewerFormat();
+            // A project file has the same layout, but restoring it would replace the library with one project.
+            if (document.RootElement.TryGetProperty("kind", out var kind) && kind.ValueKind == JsonValueKind.String && kind.GetString() == ProjectFileManifest.ProjectKind)
+                throw BackupException.ProjectFile();
             return JsonSerializer.Deserialize<BackupManifest>(bytes, BackupJson.Options) ?? throw BackupException.NotABackup();
         }
         catch (JsonException error)
         {
             throw BackupException.NotABackup(error);
-        }
-    }
-
-    /// <summary>Unpacks one file, stopping as soon as it's longer than the manifest says, and checks its hash.</summary>
-    private static void Extract(ZipArchiveEntry entry, BackupFile file, string destination)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-        try
-        {
-            using var input = entry.Open();
-            using var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write);
-            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-            var buffer = new byte[81920];
-            long total = 0;
-            int read;
-            while ((read = input.Read(buffer)) > 0)
-            {
-                total += read;
-                if (total > file.Size) throw BackupException.Damaged(file.Path);
-                hash.AppendData(buffer, 0, read);
-                output.Write(buffer, 0, read);
-            }
-            if (total != file.Size || Convert.ToHexStringLower(hash.GetHashAndReset()) != file.Sha256)
-                throw BackupException.Damaged(file.Path);
-        }
-        catch (InvalidDataException error)
-        {
-            throw new BackupException(BackupException.Damaged(file.Path).Message, error);
         }
     }
 
@@ -275,7 +191,7 @@ public static class LibraryRestore
         return theirs > ours;
     }
 
-    private static bool TryParseVersion(string? text, out Version version)
+    internal static bool TryParseVersion(string? text, out Version version)
     {
         version = new Version(0, 0, 0);
         if (text is null) return false;
@@ -286,19 +202,6 @@ public static class LibraryRestore
             if (!int.TryParse(parts[i], NumberStyles.None, CultureInfo.InvariantCulture, out numbers[i])) return false;
         version = new Version(numbers[0], numbers[1], numbers[2]);
         return true;
-    }
-
-    private static void CopyAtMost(Stream input, Stream output, long limit)
-    {
-        var buffer = new byte[81920];
-        long total = 0;
-        int read;
-        while ((read = input.Read(buffer)) > 0)
-        {
-            total += read;
-            if (total > limit) throw BackupException.NotABackup();
-            output.Write(buffer, 0, read);
-        }
     }
 
     // MARK: Schedule

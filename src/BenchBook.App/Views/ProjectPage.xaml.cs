@@ -8,7 +8,7 @@ using Microsoft.UI.Xaml.Navigation;
 namespace BenchBook.App.Views;
 
 /// <summary>What the project page needs: the library, the project, and the window's project commands.</summary>
-internal sealed record ProjectPageArgs(AppServices Services, Project Project, Func<Project, Task> Edit, Func<Project, Task> Delete);
+internal sealed record ProjectPageArgs(AppServices Services, Project Project, Func<Project, Task> Edit, Func<Project, Task> Delete, Func<Project, Task> Export);
 
 /// <summary>A project's header and its Kits, References, Paint, Aftermarket and Build Photos tabs.</summary>
 public sealed partial class ProjectPage : Page
@@ -146,6 +146,11 @@ public sealed partial class ProjectPage : Page
     private async void Edit_Click(object sender, RoutedEventArgs e)
     {
         if (_args is not null) await _args.Edit(_args.Project);
+    }
+
+    private async void Export_Click(object sender, RoutedEventArgs e)
+    {
+        if (_args is not null) await _args.Export(_args.Project);
     }
 
     private async void Delete_Click(object sender, RoutedEventArgs e)

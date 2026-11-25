@@ -71,6 +71,12 @@
                     </AppBarButton.KeyboardAccelerators>
                 </AppBarButton>
                 <CommandBar.SecondaryCommands>
+                    <AppBarButton Label="Export Project…" Click="Export_Click">
+                        <AppBarButton.Icon>
+                            <FontIcon Glyph="&#xEDE1;" />
+                        </AppBarButton.Icon>
+                    </AppBarButton>
+                    <AppBarSeparator />
                     <AppBarButton Label="Delete Project…" Icon="Delete" Click="Delete_Click" />
                 </CommandBar.SecondaryCommands>
             </CommandBar>

@@ -434,10 +434,10 @@ public class BackupTests
         return path;
     }
 
-    private sealed record CentralEntry(string Name, int Flags, int Method);
+    internal sealed record CentralEntry(string Name, int Flags, int Method);
 
     /// <summary>Reads the ZIP's central directory straight from its bytes.</summary>
-    private static List<CentralEntry> CentralDirectory(byte[] zip)
+    internal static List<CentralEntry> CentralDirectory(byte[] zip)
     {
         var end = zip.Length - 22;
         while (end >= 0 && BinaryPrimitives.ReadUInt32LittleEndian(zip.AsSpan(end)) != 0x06054B50) end--;

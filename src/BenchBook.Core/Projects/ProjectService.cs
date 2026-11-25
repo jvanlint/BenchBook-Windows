@@ -129,7 +129,13 @@ public static class ProjectService
     {
         var (references, assets) = store.DeleteProject(project.Id);
         foreach (var reference in references) TryDelete(location.PosterPath(reference));
-        foreach (var assetId in assets)
+        RemoveUnusedFiles(store, location, assets);
+    }
+
+    /// <summary>Removes these assets, with their files and thumbnails, if nothing uses them any more.</summary>
+    internal static void RemoveUnusedFiles(LibraryStore store, LibraryLocation location, IEnumerable<string> assetIds)
+    {
+        foreach (var assetId in assetIds)
         {
             var asset = store.Asset(assetId);
             if (asset is null || !store.DeleteAssetIfUnused(assetId)) continue;

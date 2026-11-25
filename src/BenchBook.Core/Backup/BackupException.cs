@@ -12,6 +12,9 @@ public sealed class BackupException(string message, Exception? inner = null) : E
     public static BackupException NewerFormat() =>
         new("This backup was made by a newer version of BenchBook. Update BenchBook, then restore it.");
 
+    public static BackupException ProjectFile() =>
+        new("This is a BenchBook project file, not a backup. To add its project to your library, use Import Project… in the Projects menu.");
+
     public static BackupException Damaged(string path) =>
         new($"This backup is damaged: “{path}” doesn't match what was backed up. Your library hasn't been changed.");
 

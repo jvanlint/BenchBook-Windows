@@ -206,7 +206,11 @@ public sealed partial class MainWindow : Window
             sortBy.Items.Add(option);
         }
         menu.Items.Add(sortBy);
-        var filter = SmallButton(StatusFilter is null ? "\uE71C" : "\uE16E", "Show projects by status, and sort them");
+        menu.Items.Add(new MenuFlyoutSeparator());
+        var import = new MenuFlyoutItem { Text = "Import Project…", Icon = new FontIcon { Glyph = "\uE8B5" } };
+        import.Click += async (_, _) => await ImportProject();
+        menu.Items.Add(import);
+        var filter = SmallButton(StatusFilter is null ? "\uE71C" : "\uE16E", "Show projects by status, sort them, or import one");
         AutomationName(filter, "Filter Projects by Status");
         filter.Flyout = menu;
         Grid.SetColumn(filter, 1);
@@ -320,6 +324,9 @@ public sealed partial class MainWindow : Window
             statusMenu.Items.Add(choice);
         }
         menu.Items.Add(statusMenu);
+        var export = new MenuFlyoutItem { Text = "Export Project…", Icon = new FontIcon { Glyph = "\uEDE1" } };
+        export.Click += async (_, _) => await ExportProject(project);
+        menu.Items.Add(export);
         menu.Items.Add(new MenuFlyoutSeparator());
         var delete = new MenuFlyoutItem { Text = "Delete Project…", Icon = new SymbolIcon(Symbol.Delete) };
         delete.Click += async (_, _) => await DeleteProject(project);
@@ -651,7 +658,7 @@ public sealed partial class MainWindow : Window
         switch ((Navigation.SelectedItem as NavigationViewItem)?.Tag)
         {
             case Project project:
-                ContentFrame.Navigate(typeof(ProjectPage), new ProjectPageArgs(_services, project, EditProject, DeleteProject), new SuppressNavigationTransitionInfo());
+                ContentFrame.Navigate(typeof(ProjectPage), new ProjectPageArgs(_services, project, EditProject, DeleteProject, ExportProject), new SuppressNavigationTransitionInfo());
                 break;
             case TagItem tag:
                 ContentFrame.Content = new TagReferencesPage(new TagPageArgs(_services, tag.Id));
@@ -736,7 +743,7 @@ public sealed partial class MainWindow : Window
         switch ((args.SelectedItem as NavigationViewItem)?.Tag)
         {
             case Project project:
-                ContentFrame.Navigate(typeof(ProjectPage), new ProjectPageArgs(_services, project, EditProject, DeleteProject), new SuppressNavigationTransitionInfo());
+                ContentFrame.Navigate(typeof(ProjectPage), new ProjectPageArgs(_services, project, EditProject, DeleteProject, ExportProject), new SuppressNavigationTransitionInfo());
                 // The share window starts with the project last open here.
                 App.Inbox?.PublishProjects(project.Id);
                 break;
@@ -792,7 +799,7 @@ public sealed partial class MainWindow : Window
         if (await dialog.ShowAsync() != ContentDialogResult.Primary || dialog.Saved is not { } saved) return;
         BuildSidebar(saved.Id);
         if (Navigation.SelectedItem is NavigationViewItem { Tag: Project shown } && shown.Id == saved.Id)
-            ContentFrame.Navigate(typeof(ProjectPage), new ProjectPageArgs(_services, saved, EditProject, DeleteProject), new SuppressNavigationTransitionInfo());
+            ContentFrame.Navigate(typeof(ProjectPage), new ProjectPageArgs(_services, saved, EditProject, DeleteProject, ExportProject), new SuppressNavigationTransitionInfo());
     }
 
     private async Task SetStatus(Project project, string status)
@@ -803,13 +810,33 @@ public sealed partial class MainWindow : Window
             var wasShown = Navigation.SelectedItem is NavigationViewItem { Tag: Project shown } && shown.Id == saved.Id;
             BuildSidebar(saved.Id);
             if (wasShown)
-                ContentFrame.Navigate(typeof(ProjectPage), new ProjectPageArgs(_services, saved, EditProject, DeleteProject), new SuppressNavigationTransitionInfo());
+                ContentFrame.Navigate(typeof(ProjectPage), new ProjectPageArgs(_services, saved, EditProject, DeleteProject, ExportProject), new SuppressNavigationTransitionInfo());
         }
         catch (Exception error) when (error is ProjectException or SqliteException)
         {
             await ShowMessage("Couldn't Save Project", error.Message);
         }
     }
+
+    private Task ExportProject(Project project) => ProjectTransfer.ExportAsync(Content.XamlRoot, _services, project);
+
+    /// <summary>Import Project…: adds a .benchbookproject file's project, then shows it.</summary>
+    private Task ImportProject() => ProjectTransfer.ImportAsync(Content.XamlRoot, _services, id =>
+    {
+        var project = _services.WithStore(s => s.Project(id));
+        if (project is null) return;
+        // An imported project that the filter would hide shows all projects instead.
+        if (StatusFilter is not null && (project.Status ?? ProjectStatus.Researching) != StatusFilter)
+        {
+            _services.Settings.ProjectStatusFilter = null;
+            _services.SaveSettings();
+        }
+        var wasShown = Navigation.SelectedItem is NavigationViewItem { Tag: Project shown } && Ids.Comparer.Equals(shown.Id, id);
+        BuildSidebar(id);
+        // A replaced project keeps its id, so the page showing it is shown again.
+        if (wasShown)
+            ContentFrame.Navigate(typeof(ProjectPage), new ProjectPageArgs(_services, project, EditProject, DeleteProject, ExportProject), new SuppressNavigationTransitionInfo());
+    });
 
     private async Task DeleteProject(Project project)
     {

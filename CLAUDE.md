@@ -170,8 +170,15 @@ Windows project, not there). As of Mac 1.3.0 (`9c68bc9`, 2026-11-24):
   (`ReferenceWithLink`), and a file keeps the page it came from (a share's
   `ContentSourceWebLink`, else the HTML format's `SourceURL`). PDF markup
   badges kept on the page (#39, `MarkupGeometry.BadgeCentre(markup, page)`).
-- **Not yet:** project export and import (`.benchbookproject`), and the Edge
-  and Chrome extension the spec plans for a later phase.
+- **Done:** project export and import (#12, `Backup\ProjectFile.cs`,
+  `Backup\ProjectImporter.cs`, `Views\ProjectTransfer.cs`). Export Project…
+  is in a project's right-click menu and the project page's ••• menu; Import
+  Project… is in the Projects menu (the filter button), as Windows has no File
+  menu. Every entry is stored, and manifest.json goes last, so each file is
+  hashed as it's copied (the Mac writes it first; readers don't mind). Shared
+  ZIP checks are in `Backup\ZipChecks.cs`. Restoring a project file as a
+  backup is refused. Not tried yet with a file made on a Mac.
+- **Not yet:** the Edge and Chrome extension the spec plans for a later phase.
 
 ## Releasing
 
