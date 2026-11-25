@@ -21,4 +21,8 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Copies of the spec's fixtures, so the tests run without the Mac repo beside this one. -->
+    <None Include="Fixtures\*.csv" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

@@ -7,7 +7,7 @@ namespace BenchBook.Core.Tests;
 
 public class KitTests
 {
-    private static readonly string Fixtures = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "BenchBook", "spec", "fixtures"));
+    private static readonly string Fixtures = SpecFixtures.Folder;
 
     private static Kit Make(string brand, string name, string? scale = null, string? number = null, string? link = null, bool owned = true, string status = KitStatus.Bnib) => new()
     {

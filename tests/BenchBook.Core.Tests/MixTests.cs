@@ -219,7 +219,7 @@ public class ProjectPaintRowTests
 /// <summary>Import from Scalemates… on the Paints screen (behaviour.md, "Scalemates import"; ScalematesPaintImportTests.swift).</summary>
 public class ScalematesPaintTests
 {
-    private static readonly string Fixtures = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "BenchBook", "spec", "fixtures"));
+    private static readonly string Fixtures = SpecFixtures.Folder;
 
     private static string Stash => File.ReadAllText(Path.Combine(Fixtures, "paints-scalemates.csv"));
 
