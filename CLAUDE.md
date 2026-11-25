@@ -191,8 +191,8 @@ would need a paid OV certificate with cloud signing.
   tests, builds the zips and makes a **draft** release, marked as a
   pre-release for 0.x. The user publishes it. Run by hand, it keeps the zips as
   a workflow artifact instead.
-- Versions stay 0.x until Phase 1 lets the two apps share backups, then follow
-  the Mac's 1.x.y.
+- Versions follow the Mac's: decided with the user on 2026-11-25, starting
+  with 1.3.0, which matches Mac 1.3.0 (0.x releases came before).
 - Day-to-day builds stay MSIX (`Package.appxmanifest`, development package).
 
 ## Working rules
