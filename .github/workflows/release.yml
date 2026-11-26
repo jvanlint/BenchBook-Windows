@@ -78,7 +78,9 @@ jobs:
       - name: Write the release notes
         if: github.event_name == 'push'
         run: |
-          $previous = git describe --tags --abbrev=0 "${{ github.ref_name }}^" 2>$null
+          # A release lists what's changed since the last release; a pre-release, since the last tag of either kind.
+          $skip = if ("${{ steps.version.outputs.prerelease }}" -eq "true") { @() } else { @("--exclude", "*-*") }
+          $previous = git describe --tags --abbrev=0 @skip "${{ github.ref_name }}^" 2>$null
           $range = if ($LASTEXITCODE -eq 0 -and $previous) { "$previous..${{ github.ref_name }}" } else { "${{ github.ref_name }}" }
           $changes = git log $range --no-merges --pretty=format:"- %s"
           @"
