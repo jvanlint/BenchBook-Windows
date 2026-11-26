@@ -44,7 +44,7 @@ public static class UpdateFeed
     /// build has the private half (a GitHub Actions secret). If this is
     /// empty, no update can be checked or installed.
     /// </summary>
-    public const string PublicKey = "On0CzQBNdKq1LlsMPmsQ6NT203t6veYdBwoLjj5w+lE=";
+    public const string PublicKey = "Adc4vcEnBt9EostqdXfOvZcyrU68M5GQZtO0+ImJNpU=";
 
     /// <summary>win-x64 or win-arm64, as in the release zips' names; null on other processors.</summary>
     public static string? Runtime(Architecture architecture) => architecture switch
