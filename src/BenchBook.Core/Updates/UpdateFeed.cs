@@ -84,6 +84,11 @@ public static class UpdateFeed
             data = await Get(http, feed, installedVersion, cancellation);
             signature = Encoding.UTF8.GetString(await Get(http, new Uri(feed + ".signature"), installedVersion, cancellation)).Trim();
         }
+        catch (HttpRequestException error) when (error.StatusCode is not null)
+        {
+            // The website answered, but hasn't got this processor's feed, or refused.
+            return new UpdateCheck.Failed($"BenchBook's website has no list of updates for this PC yet ({(int)error.StatusCode} from {error.Data["url"]}).");
+        }
         catch (Exception error) when (error is HttpRequestException or IOException || (error is TaskCanceledException && !cancellation.IsCancellationRequested))
         {
             return new UpdateCheck.Failed("BenchBook couldn't reach its website to check for updates. Check that this PC is online, then try again.");
@@ -162,7 +167,8 @@ public static class UpdateFeed
     {
         using var request = Request(url, installedVersion);
         using var response = await http.SendAsync(request, cancellation);
-        if (response.StatusCode != HttpStatusCode.OK) throw new HttpRequestException($"{(int)response.StatusCode} from {url}");
+        if (response.StatusCode != HttpStatusCode.OK)
+            throw new HttpRequestException($"{(int)response.StatusCode} from {url}", null, response.StatusCode) { Data = { ["url"] = url.AbsoluteUri } };
         return await response.Content.ReadAsByteArrayAsync(cancellation);
     }
 
@@ -205,7 +211,9 @@ public static class UpdateFeed
             Language = "en",
             Items = [item],
         };
-        return new XMLAppCastGenerator().SerializeAppCast(feed);
+        // Line feeds only, so nothing on the way to the website (such as git's
+        // line-ending conversion) changes the bytes the signature covers.
+        return new XMLAppCastGenerator().SerializeAppCast(feed).ReplaceLineEndings("\n");
     }
 
     private static byte[] Seed(string privateKey)

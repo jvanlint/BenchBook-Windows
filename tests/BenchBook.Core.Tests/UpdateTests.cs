@@ -42,6 +42,13 @@ public sealed class UpdateTests : IDisposable
         }
     }
 
+    /// <summary>No connection at all.</summary>
+    private sealed class Offline : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            throw new HttpRequestException("No such host is known.");
+    }
+
     private static byte[] Zip(string exeText)
     {
         using var memory = new MemoryStream();
@@ -172,9 +179,29 @@ public sealed class UpdateTests : IDisposable
     }
 
     [Fact]
+    public void FeedsHaveOnlyLineFeeds()
+    {
+        // Git on Windows would otherwise turn CRLF into LF, and the signature would no longer match.
+        var feed = UpdateFeed.WriteFeed("1.4.0", "win-x64", "- One\r\n- Two", ZipUrl, 10, "c2ln", DateTimeOffset.UtcNow);
+        Assert.DoesNotContain('\r', feed);
+        Assert.Contains('\n', feed);
+    }
+
+    [Fact]
+    public async Task AMissingFeedSaysSo()
+    {
+        var server = new Server();
+        var result = await UpdateFeed.CheckAsync(new HttpClient(server), FeedUrl, "1.3.0", "win-x64", _keys.PublicKey);
+        var message = Assert.IsType<UpdateCheck.Failed>(result).Message;
+        Assert.Contains("no list of updates", message);
+        Assert.Contains("404", message);
+        Assert.Contains(FeedUrl.AbsoluteUri, message);
+    }
+
+    [Fact]
     public async Task BeingOfflineSaysSo()
     {
-        var result = await UpdateFeed.CheckAsync(new HttpClient(new Server()), FeedUrl, "1.3.0", "win-x64", _keys.PublicKey);
+        var result = await UpdateFeed.CheckAsync(new HttpClient(new Offline()), FeedUrl, "1.3.0", "win-x64", _keys.PublicKey);
         Assert.Contains("online", Assert.IsType<UpdateCheck.Failed>(result).Message);
     }
 

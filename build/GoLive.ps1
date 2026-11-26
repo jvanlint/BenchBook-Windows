@@ -67,7 +67,13 @@ try {
     gh repo clone $Site $checkout -- --depth 1
     if ($LASTEXITCODE -ne 0) { throw "The website repository couldn't be cloned." }
     Copy-Item (Join-Path $downloaded "*") $checkout
-    git -C $checkout add -- $feeds
+    # The feeds are signed byte for byte, so git mustn't change their line endings.
+    git -C $checkout -c core.autocrlf=false -c core.safecrlf=false add -- $feeds
+    foreach ($feed in $feeds) {
+        $blob = git -C $checkout hash-object --no-filters -- $feed
+        $index = git -C $checkout rev-parse ":$feed"
+        if ($blob -ne $index) { throw "git would change $feed on the way to the website, so its signature wouldn't match." }
+    }
     git -C $checkout diff --cached --quiet
     if ($LASTEXITCODE -eq 0) {
         Write-Host "The website already has these feeds."
