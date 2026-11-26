@@ -252,6 +252,25 @@
                 <TextBlock Style="{StaticResource CardDescriptionStyle}" Margin="2,8,0,0"
                            Text="Each is the whole library as it was before a restore. Keep it until you're sure the restore has everything." />
             </StackPanel>
+
+            <!-- About: the Mac has About BenchBook in its app menu; Windows has none. -->
+            <TextBlock Text="About" Style="{StaticResource SectionHeaderStyle}" />
+            <Border Style="{StaticResource CardStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Text="BenchBook" />
+                        <TextBlock Style="{StaticResource CardDescriptionStyle}" Text="{x:Bind ViewModel.VersionText}" IsTextSelectionEnabled="True" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <HyperlinkButton Content="Website" NavigateUri="https://jvanlint.github.io/BenchBook-Site/" />
+                        <HyperlinkButton Content="Report a Problem" NavigateUri="https://github.com/jvanlint/BenchBook-Windows/issues" />
+                    </StackPanel>
+                </Grid>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </Page>

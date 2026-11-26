@@ -10,7 +10,7 @@
     automatic updates (CLAUDE.md, "Releasing").
 
     The version is stamped on BenchBook.exe as e.g. 0.2.0.123, where 123 is the
-    number of commits, as the Mac counts builds. Settings shows "0.2.0 (123)".
+    number of commits, as the Mac counts builds. Settings > About shows "Version 0.2.0 (123)".
 
 .EXAMPLE
     .\build\Release.ps1 -Version 0.2.0

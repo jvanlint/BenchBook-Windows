@@ -194,7 +194,7 @@ would need a paid OV certificate with cloud signing.
   the first time the app runs. Without a package there's no share target.
 - `build\Release.ps1 -Version 0.2.0` builds them into `artifacts\`, the same on
   a PC as on GitHub. It publishes with `-p:BenchBookUnpackaged=true` and stamps
-  the `.exe` as `0.2.0.<commit count>`. Settings shows "0.2.0 (123)".
+  the `.exe` as `0.2.0.<commit count>`. Settings › About shows "Version 0.2.0 (123)".
 - `.github\workflows\release.yml` runs on a pushed `v*.*.*` tag: it runs the
   tests, builds the zips and makes a **draft** release, marked as a
   pre-release for 0.x. The user publishes it. Run by hand, it keeps the zips as

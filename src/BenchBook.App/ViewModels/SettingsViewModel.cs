@@ -33,6 +33,9 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public AppServices Services => _services;
 
+    /// <summary>"Version 1.4.0 (123)" in Settings › About; a development package has no build number.</summary>
+    public string VersionText { get; } = $"Version {AppVersion()}";
+
     // MARK: General
 
     [ObservableProperty] public partial bool FetchLinkDetails { get; set; }
