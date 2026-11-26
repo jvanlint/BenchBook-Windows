@@ -21,6 +21,13 @@ public sealed class AppSettings
     /// <summary>Columns hidden on the Kits screen, by key.</summary>
     public List<string> HiddenKitColumns { get; set; } = [];
     public DateTimeOffset? LastBackup { get; set; }
+    /// <summary>Whether BenchBook checks for updates once a day; null until the user's been asked, on the second launch.</summary>
+    public bool? CheckForUpdatesAutomatically { get; set; }
+    /// <summary>How many times BenchBook has opened, counted until the second launch asks about updates.</summary>
+    public int Launches { get; set; }
+    public DateTimeOffset? LastUpdateCheck { get; set; }
+    /// <summary>The version the user chose Skip This Version for. Automatic checks don't offer it again.</summary>
+    public string? SkippedVersion { get; set; }
     /// <summary>Each viewer's last size and position: x, y, width, height.</summary>
     public Dictionary<string, int[]> WindowFrames { get; set; } = [];
     /// <summary>The last colour chosen for each kind of PDF markup.</summary>

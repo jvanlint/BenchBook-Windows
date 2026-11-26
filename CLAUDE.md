@@ -178,6 +178,8 @@ Windows project, not there). As of Mac 1.3.0 (`9c68bc9`, 2026-11-24):
   hashed as it's copied (the Mac writes it first; readers don't mind). Shared
   ZIP checks are in `Backup\ZipChecks.cs`. Restoring a project file as a
   backup is refused. Not tried yet with a file made on a Mac.
+- **Done, not live yet:** update checks (`Core\Updates`, `Services\AppUpdates.cs`).
+  See "Updates" under Releasing. The key was made on 2026-11-26.
 - **Not yet:** the Edge and Chrome extension the spec plans for a later phase.
 
 ## Releasing
@@ -189,8 +191,7 @@ would need a paid OV certificate with cloud signing.
 
 - Releases are unpackaged, unsigned zips, one for x64 and one for Arm64, each a
   `BenchBook` folder with `BenchBook.exe`, plus `SHA256SUMS.txt`. Windows warns
-  the first time the app runs. Without a package there's no share target and
-  no automatic updates.
+  the first time the app runs. Without a package there's no share target.
 - `build\Release.ps1 -Version 0.2.0` builds them into `artifacts\`, the same on
   a PC as on GitHub. It publishes with `-p:BenchBookUnpackaged=true` and stamps
   the `.exe` as `0.2.0.<commit count>`. Settings shows "0.2.0 (123)".
@@ -204,6 +205,43 @@ would need a paid OV certificate with cloud signing.
 - `.github\workflows\build.yml` checks every push to any branch (not
   `.md`-only ones): both test projects, then the packaged app for x64 and
   Arm64. It's read-only and makes nothing to download.
+
+### Updates
+
+The spec chose NetSparkleUpdater (`windows-app.md`, "Distribution and
+updates"). It's in Core as `NetSparkleUpdater.SparkleUpdater` 3.1.0 (MIT),
+added on 2026-11-25. Only its feed reading and writing, version comparison
+and Ed25519 checks are used. It has no WinUI window and can't install a zip on
+Windows, and its `SparkleUpdater` keeps settings in the registry.
+
+- Feeds: `appcast-windows-x64.xml` and `appcast-windows-arm64.xml` in the
+  root of the BenchBook-Site repository (GitHub Pages), each with a
+  `.signature` beside it. Each has one item: the release's zip on GitHub
+  Releases. The update window shows the item's description, which is the
+  Changes list from the release notes.
+- Key: a Windows-only Ed25519 pair. The public half is
+  `UpdateFeed.PublicKey`. The private
+  half is the `BENCHBOOK_UPDATE_PRIVATE_KEY` Actions secret, which only the
+  user sets. `dotnet run --project build\UpdateFeed -- keys <file>` makes a
+  pair.
+- A check sends only `User-Agent: BenchBook/<version>`, as the Mac's does.
+  Settings keeps the answer to the second launch's question, the time of the
+  last check and the skipped version (`AppSettings`).
+- Install Update downloads into `%LOCALAPPDATA%\BenchBook\BenchBook Update`,
+  checks the zip's size and signature, unpacks it, and starts the new
+  `BenchBook.exe --install-update Plan.json`. That copy waits for the old one
+  to close, copies itself beside the app folder, swaps the folders, and opens
+  the new version. The old folder is kept as `<name>.old-xxxxxxxx` and removed
+  at the next launch. **Every later version must keep accepting a format 1
+  plan**, because the version before it hands over this way.
+- It refuses a folder it can't write beside, and a folder that holds the
+  library or is inside it. Then it offers the download page instead. The MSIX
+  development package always offers the download page.
+- The release workflow writes and signs the feeds (`build\UpdateFeed`) and
+  attaches them to the draft. Without the secret, it warns and makes no feeds.
+  `build\GoLive.ps1 -Version x.y.z` publishes the draft, checks the zips
+  download, and pushes the feeds to the website. That's when copies are
+  offered the update. The user runs it.
 
 ## Working rules
 

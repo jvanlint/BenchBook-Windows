@@ -18,6 +18,9 @@ public sealed partial class MainWindow : Window
 {
     private readonly AppServices _services;
     private RestoreOutcome? _outcome;
+
+    /// <summary>What the last update left, reported once the window shows.</summary>
+    public BenchBook.Core.Updates.UpdateResult? Updated { get; set; }
     private List<Project> _projects = [];
     private ILookup<string, Kit> _kits = Array.Empty<Kit>().ToLookup(k => k.Id);
     private bool _rebuilding;
@@ -868,6 +871,15 @@ public sealed partial class MainWindow : Window
 
     /// <summary>Tells the user how a restore finished, once.</summary>
     private async void Navigation_Loaded(object sender, RoutedEventArgs e)
+    {
+        await ShowRestoreOutcome();
+        // After the restore's message: only one dialog can be open at a time.
+        var updated = Updated;
+        Updated = null;
+        if (_services.Updates is { } updates) await updates.LaunchedAsync(updated);
+    }
+
+    private async Task ShowRestoreOutcome()
     {
         if (_outcome is not { } outcome) return;
         _outcome = null;

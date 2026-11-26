@@ -45,6 +45,9 @@ jobs:
       - name: Run the PDF tests
         run: dotnet test --project tests/BenchBook.Pdf.Tests -c Release
 
+      - name: Build the update feed tool
+        run: dotnet build build/UpdateFeed -c Release
+
   app:
     name: App (${{ matrix.platform }})
     runs-on: windows-latest

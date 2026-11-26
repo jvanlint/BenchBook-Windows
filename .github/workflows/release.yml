@@ -98,6 +98,22 @@ jobs:
           $($changes -join "`n")
           "@ -replace '(?m)^          ', '' | Set-Content notes.md -Encoding utf8
 
+      # The feeds that tell copies of BenchBook about this version, signed with the
+      # Windows update key. They're attached to the draft; build\GoLive.ps1 puts
+      # them on the website once the release is published. Without the secret the
+      # release is still made, but no copy is offered it.
+      - name: Write the update feeds
+        if: github.event_name == 'push'
+        env:
+          BENCHBOOK_UPDATE_PRIVATE_KEY: ${{ secrets.BENCHBOOK_UPDATE_PRIVATE_KEY }}
+        run: |
+          if (-not $env:BENCHBOOK_UPDATE_PRIVATE_KEY) {
+            "::warning::The BENCHBOOK_UPDATE_PRIVATE_KEY secret isn't set, so this release has no update feeds."
+            exit 0
+          }
+          dotnet run --project build/UpdateFeed -c Release -- feeds "${{ steps.version.outputs.value }}" notes.md artifacts "${{ github.repository }}"
+          if ($LASTEXITCODE -ne 0) { throw "The update feeds couldn't be written." }
+
       - name: Create the draft release
         if: github.event_name == 'push'
         env:

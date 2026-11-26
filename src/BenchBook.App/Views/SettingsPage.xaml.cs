@@ -37,7 +37,22 @@ public sealed partial class SettingsPage : Page
             StatusBox.Items.Add(row);
         }
         Bindings.Update();
+        if (ViewModel.Services.Updates is { } updates) updates.BusyChanged += Updates_BusyChanged;
         await ViewModel.MeasureAsync();
+    }
+
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        if (ViewModel.Services.Updates is { } updates) updates.BusyChanged -= Updates_BusyChanged;
+        base.OnNavigatedFrom(e);
+    }
+
+    // The daily check or the second launch's question can change these while the page shows.
+    private void Updates_BusyChanged(object? sender, EventArgs e) => ViewModel.RefreshUpdates();
+
+    private async void CheckNow_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.Services.Updates is { } updates) await updates.CheckNowAsync();
     }
 
     private static Microsoft.UI.WindowId WindowId => App.MainWindow!.AppWindow.Id;

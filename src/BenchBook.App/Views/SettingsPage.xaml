@@ -24,10 +24,32 @@
                     <StackPanel VerticalAlignment="Center" Spacing="2">
                         <TextBlock Text="Fetch webpage previews and video details automatically" TextWrapping="Wrap" />
                         <TextBlock Style="{StaticResource CardDescriptionStyle}"
-                                   Text="After you save a webpage or a YouTube or Vimeo link, BenchBook reads the page for its preview image, title and description, or the video's poster, channel and length. This is the only time BenchBook goes online on its own. When it's off, use Refresh on a link to fetch its details." />
+                                   Text="After you save a webpage or a YouTube or Vimeo link, BenchBook reads the page for its preview image, title and description, or the video's poster, channel and length. Apart from checking for updates, this is the only time BenchBook goes online on its own. When it's off, use Refresh on a link to fetch its details." />
                     </StackPanel>
                     <ToggleSwitch Grid.Column="1" IsOn="{x:Bind ViewModel.FetchLinkDetails, Mode=TwoWay}" OnContent="On" OffContent="Off"
                                   AutomationProperties.Name="Fetch webpage previews and video details automatically" MinWidth="0" />
+                </Grid>
+            </Border>
+
+            <TextBlock Text="Updates" Style="{StaticResource SectionHeaderStyle}" />
+            <Border Style="{StaticResource CardStyle}">
+                <Grid ColumnSpacing="16" RowSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition />
+                        <RowDefinition />
+                    </Grid.RowDefinitions>
+                    <StackPanel VerticalAlignment="Center" Spacing="2">
+                        <TextBlock Text="Check for updates automatically" TextWrapping="Wrap" />
+                        <TextBlock Style="{StaticResource CardDescriptionStyle}"
+                                   Text="BenchBook looks for a new version once a day and shows you what's new before anything is installed. The check sends only BenchBook's version number." />
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1" IsOn="{x:Bind ViewModel.CheckForUpdatesAutomatically, Mode=TwoWay}" OnContent="On" OffContent="Off"
+                                  AutomationProperties.Name="Check for updates automatically" MinWidth="0" />
+                    <Button Grid.Row="1" Content="Check Now" Click="CheckNow_Click" IsEnabled="{x:Bind ViewModel.CanCheckForUpdates, Mode=OneWay}" />
                 </Grid>
             </Border>
 

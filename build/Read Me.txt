@@ -20,11 +20,14 @@ Your library
 Your library is kept in %LOCALAPPDATA%\BenchBook, not in this folder. Deleting
 or replacing this folder never deletes your library.
 
-To update, close BenchBook, delete this folder and unzip the new version in its
-place.
+To update, use Check Now in Settings, or let BenchBook check once a day. It
+shows what's new first, then replaces this folder with the new version and
+opens again. You can also close BenchBook, delete this folder and unzip the new
+version in its place.
 
 BenchBook stays on your computer. It has no accounts and sends nothing about
 you anywhere. It only goes online to fetch the title and picture for links you
-save, which you can turn off in Settings.
+save, and to check for updates if you let it. Both can be turned off in
+Settings.
 
 https://github.com/jvanlint/BenchBook-Windows

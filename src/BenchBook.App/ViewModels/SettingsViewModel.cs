@@ -23,6 +23,8 @@ public sealed partial class SettingsViewModel : ObservableObject
         ImageOpenIndex = services.Settings.OpenImagesAtActualSize ? 1 : 0;
         ShowNoteBoxes = services.Settings.ShowNoteBoxes;
         NewProjectStatusIndex = Math.Max(0, ProjectStatus.All.ToList().IndexOf(services.Settings.NewProjectStatus));
+        CheckForUpdatesAutomatically = services.Settings.CheckForUpdatesAutomatically == true;
+        CanCheckForUpdates = services.Updates is { IsBusy: false };
         _loading = false;
         LibraryPath = services.Location.AppFolder;
         UpdateLastBackupText();
@@ -37,6 +39,23 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty] public partial int ImageOpenIndex { get; set; }
     [ObservableProperty] public partial bool ShowNoteBoxes { get; set; }
     [ObservableProperty] public partial int NewProjectStatusIndex { get; set; }
+    [ObservableProperty] public partial bool CheckForUpdatesAutomatically { get; set; }
+
+    /// <summary>False while a check or an update is under way.</summary>
+    [ObservableProperty] public partial bool CanCheckForUpdates { get; set; }
+
+    public void RefreshUpdates()
+    {
+        _loading = true;
+        CheckForUpdatesAutomatically = _services.Settings.CheckForUpdatesAutomatically == true;
+        _loading = false;
+        CanCheckForUpdates = _services.Updates is { IsBusy: false };
+    }
+
+    partial void OnCheckForUpdatesAutomaticallyChanged(bool value)
+    {
+        if (!_loading && _services.Updates is { } updates) SettingsError = updates.SetCheckAutomatically(value);
+    }
 
     /// <summary>Set when a setting couldn't be saved.</summary>
     [ObservableProperty] public partial string? SettingsError { get; set; }

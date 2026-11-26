@@ -3,6 +3,7 @@ using BenchBook.App.Services;
 using BenchBook.Core;
 using BenchBook.Core.Backup;
 using BenchBook.Core.Store;
+using BenchBook.Core.Updates;
 using Microsoft.UI.Xaml;
 
 namespace BenchBook.App;
@@ -57,6 +58,16 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        // Started by Install Update from the new version's unpacked folder: this
+        // process only swaps the folders, opens the new version and exits.
+        var commandLine = Environment.GetCommandLineArgs();
+        var install = Array.IndexOf(commandLine, UpdateInstaller.InstallArgument);
+        if (install >= 0 && install + 1 < commandLine.Length)
+        {
+            InstallUpdate(commandLine[install + 1]);
+            return;
+        }
+
         // Chosen in the Windows share sheet: this process only shows the share window.
         // It doesn't open the library or finish a restore; the running app imports what it sends.
         var activation = Microsoft.Windows.AppLifecycle.AppInstance.GetCurrent().GetActivatedEventArgs();
@@ -94,9 +105,22 @@ public partial class App : Application
             return;
         }
 
+        // What the last update left is removed; a failure is reported once the window shows.
+        UpdateResult? update;
+        try
+        {
+            update = UpdateInstaller.FinishPending(location);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            update = null;
+        }
+
         Services = new AppServices(location, store);
         var main = new MainWindow(Services, outcome);
         _window = main;
+        Services.Updates = new AppUpdates(Services, () => main.Content?.XamlRoot, main.DispatcherQueue);
+        main.Updated = update;
         Inbox = new Share.ShareInbox(Services, main.DispatcherQueue);
         Inbox.Reported += async (_, report) => await main.ShowReport(report);
         _window.Closed += (_, _) =>
@@ -115,7 +139,22 @@ public partial class App : Application
         _ = Task.Run(() => services.FetchLinkDetails(services.Links.Missing()));
     }
 
-    /// <summary>Waits up to 30 seconds for the BenchBook that scheduled a restore to close.</summary>
+    private void InstallUpdate(string planPath)
+    {
+        var start = UpdateInstaller.Install(planPath, LibraryLocation.Default(), WaitForExit);
+        try
+        {
+            var exe = Path.Combine(start, UpdateInstaller.ExeName);
+            if (File.Exists(exe)) Process.Start(new ProcessStartInfo(exe) { UseShellExecute = false, WorkingDirectory = start });
+        }
+        catch (Exception error) when (error is System.ComponentModel.Win32Exception or IOException or InvalidOperationException)
+        {
+            LogError(error);
+        }
+        Exit();
+    }
+
+    /// <summary>Waits up to 30 seconds for the BenchBook that scheduled a restore or an update to close.</summary>
     private static bool WaitForExit(int processId)
     {
         if (processId == Environment.ProcessId) return true;

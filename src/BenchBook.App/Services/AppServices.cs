@@ -107,6 +107,9 @@ public sealed class AppServices : IDisposable, IStoreAccess
     T IStoreAccess.With<T>(Func<LibraryStore, T> work) => WithStore(work);
 
     public LibraryLocation Location { get; }
+
+    /// <summary>Check Now and the daily update check; set once the main window exists.</summary>
+    public AppUpdates? Updates { get; set; }
     public AppSettings Settings { get; }
 
     /// <summary>Selects a project in the main window. Set by the window.</summary>
